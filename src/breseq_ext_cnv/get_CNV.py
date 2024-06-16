@@ -368,7 +368,7 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
 
 
 def bias_correction(filepath,ori,ter):
-    sample = sample.strip().split('/')[-1]
+    sample = filepath.strip().split('/')[-1]
     print('f{sample}: Calculating coverage and GC%'' across sliding window over the genome')
     df = preprocess(filepath)
     gc_corr = gc_normalization(df)
