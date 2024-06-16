@@ -369,7 +369,7 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
     new_exp.to_csv(csv_full_path)
     copy_numbers.to_csv(brk_full_path)
 
-    print(f"{sample}: Copy number prediction complete.")
+    print(f"{sample}: Copy number prediction complete. .csv files saved.")
     return new_exp, sample
 
 
@@ -378,12 +378,12 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
 
 def bias_correction(filepath,ori,ter):
     sample = filepath.strip().split('/')[-1]
-    print(f'{sample}: Calculating coverage and GC% across sliding window over the genome')
+    print(f'{sample}: Calculating coverage and GC% across sliding window over the genome.')
     df = preprocess(filepath)
     gc_corr = gc_normalization(df)
-    print(f'{sample}: Corrected GC bias in coverage')
+    print(f'{sample}: Corrected GC bias in coverage.')
     otr_corr = otr_correction(gc_corr, ori, ter)
-    print(f'{sample}: Corrected origin/terminus of replication(OTR) bias in coverage')
+    print(f'{sample}: Corrected origin/terminus of replication(OTR) bias in coverage.')
     return otr_corr
 
 
@@ -583,11 +583,11 @@ def main():
     
     #Call the plotting functions to visualize bias correction and copy number predictions
     gc_cor_plots(cnv, sample=options.i, output=options.o)
-    print(f'{smpl}: GC bias vs coverage plots saved')
+    print(f'{smpl}: GC bias vs coverage plots saved.')
     plot_otr_corr(cnv, sample=options.i, output=options.o, ori=options.ori, ter=options.ter)
-    print(f'{smpl}: OTR bias vs coverage plots saved')
+    print(f'{smpl}: OTR bias vs coverage plots saved.')
     plot_copy(cnv, sample=options.i, output=options.o)
-    print(f'{smpl}: CNV prediction plots saved')
+    print(f'{smpl}: CNV prediction plots saved.')
 
 
 if __name__ == "__main__":
