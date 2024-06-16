@@ -23,5 +23,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
 [project.scripts]
 breseq-ext-cnv = "breseq_ext_cnv.get_CNV:main"
