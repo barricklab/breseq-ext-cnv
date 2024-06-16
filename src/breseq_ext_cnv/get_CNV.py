@@ -6,11 +6,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
-# from scipy import ndimage
-from scipy.special import gammaln
+from scipy.special import  gammaln
+from scipy import stats
 from scipy.stats import geom
 import seaborn as sns
 from pathlib import Path
+from scipy.optimize import minimize
+from itertools import cycle, islice
 
 def preprocess(filepath:str):
     df = pd.read_csv(filepath, delimiter = '\t',header = 0, index_col = 0)
@@ -88,64 +90,90 @@ def gc_normalization(df):
     return df
 
 
-# In[11]:
-
-
-def ori_ter_fit(df):
+def fit_func(params, x, y, x3):
+    x1, x2, y1, y2, = params
     
-    x=df["window"]
-    y=df["gc_corr_norm_cov"]
+    y_circ = list(islice(cycle(y), int(x2), int(x2)+x3))
     
-    # lowess=sm.nonparametric.lowess
-    # yout=lowess(y, x,frac=0.8, it=3, delta=0.0, 
-    #        is_sorted=False, missing='none', return_sorted=False)    
-
-    poly = np.polynomial.Polynomial
-    cmin, cmax = min(x), max(x)
-    pfit, stats = poly.fit(x, y, 1, full=True, window=(cmin, cmax), domain=(cmin, cmax))
-    c, m = pfit
-    yout = (m*x)+c
-
-    ycor=list(y/yout)
+    x1 = x1 - x2
+    x2 -= x2
     
+    m1 = (y1-y2) / (x1-x2)
+    m2 = (y2-y1) / (x3-x1)
+    c1 = y1 - m1 * (x1)
+    c2 = y1 - m2 * (x1)
+    
+    error = 0
+    for i in range(int(x1)):
+        y1_pred = m1*x[i] + c1
+        error += (y_circ[i]-y1_pred) ** 2
+    for i in range(int(x1),len(y)):
+        y2_pred = m2*x[i] + c2
+        error += (y_circ[i]-y2_pred) ** 2
+    return error
 
-    return ycor, yout
 
+def otr_fit(df, ter_idx, ori_idx):
+    
+    df_filt = df[np.abs(stats.zscore(df["gc_corr_norm_cov"])) < 3 ]
+    
+    x_init = df.index
+    y_init = df["gc_corr_norm_cov"]
+    x = df_filt.index
+    y = df_filt["gc_corr_norm_cov"]
+    
+    x3_const = len(y_init)
+    
+    xori_guess = df_filt["gc_corr_norm_cov"].iloc[int(ori_idx*0.7):int(ori_idx*1.3)].idxmax()
+    xter_guess = df_filt["gc_corr_norm_cov"].iloc[int(ter_idx*0.7):int(ter_idx*1.3)].idxmin()    
+    yori_guess = np.max(y)
+    yter_guess = np.min(y)  
 
+    initial_guess = [xori_guess, xter_guess, yori_guess, yter_guess]
+    
+    result = minimize(fit_func, initial_guess, args = (x, y, x3_const))
+
+    xori_opt, xter_opt, yori_opt, yter_opt = result.x
+
+    m1_opt = (yori_opt-yter_opt) / (xori_opt-xter_opt)
+    m2_opt = (yter_opt-yori_opt) / (len(x_init)-(xori_opt-xter_opt))
+    
+    c1_opt = yori_opt - m1_opt * (xori_opt-xter_opt)
+    c2_opt = yori_opt - m2_opt * (xori_opt-xter_opt)
+    
+    y1_fit=[]
+    y2_fit=[]
+
+    y1_fit = [m1_opt * x_init + c1_opt for x_init in range(0,int(xori_opt)-int(xter_opt))]
+    y2_fit = [m2_opt * x_init + c2_opt for x_init in range(int(xori_opt)-int(xter_opt),len(x_init))]
+    
+    y_fit = y1_fit + y2_fit
+    y_fit = np.array(list(islice(cycle(y_fit), len(y_fit)-int(xter_opt), 2*len(y_fit)-int(xter_opt))))
+    
+    y_corr = y_init / y_fit
+    
+    # print(f'xori_opt: {xori_opt}, xter_opt: {xter_opt}, yori_opt: {yori_opt}, yter_opt: {yter_opt}')
+    # print(f'm1_opt: {m1_opt}, m2_opt: {m2_opt}, c1_opt: {c1_opt}, c2_opt: {c2_opt}')
+    
+    return y_corr, y_fit
 
     
-def otr_correction(df, ori, ter):
+def otr_correction(filepath, ori, ter):
 
+    df = gc_normalization(filepath)
     windows = df["window"]
     x1, x2 = find_nearest(windows,ter) , find_nearest(windows,ori)
-
-    # df, x1, x2 = gc_normalization(filepath)
+    
     corr = []
     
-    if df.iloc[x1].name > int(len(df)*0.1):
-        seg1, seg1_c = ori_ter_fit(df.iloc[:x1])
-    else:
-        seg1 = list(df["gc_corr_norm_cov"].iloc[:x1])
-
-    if df.iloc[x2].name < int(len(df)*0.9):
-        seg3, seg3_c = ori_ter_fit(df.iloc[x2:])
-    else:
-        seg3=list(df['gc_corr_norm_cov'].iloc[x2:])
-        
-    seg2, seg2_c = ori_ter_fit(df.iloc[x1:x2])
+    h1, f1 = otr_fit(df, x1, x2)
     
-    corr = seg1+seg2+seg3
-    corr_fct = seg1_c + seg2_c +seg3_c
-    
-    df["otr_gc_corr_norm_cov"] = corr
-    # df["otr_gc_corr_fact"] = df["otr_gc_corr_norm_cov"]/df["gc_corr_norm_cov"]
-    df["otr_gc_corr_fact"] = corr_fct
-    # df["otr_cor_med_fil"] = ndimage.median_filter(df["otr_cor"],size=200,mode="reflect")
+    df["otr_gc_corr_norm_cov"] = h1
+    df["otr_gc_corr_fact"] = f1   
     
     return df
 
 
-# In[94]:
 
 
 def solve_pr(mean, variance):
@@ -416,9 +444,6 @@ def gc_cor_plots(df, sample, output):
 #     plt.close()
 
 
-# In[23]:
-
-
 def plot_otr_corr(df, sample, output, ori, ter):
 
     sample = sample.strip().split('/')[-1]
@@ -431,8 +456,7 @@ def plot_otr_corr(df, sample, output, ori, ter):
     plt.scatter(df["window"],df["norm_raw_cov"], color="gray", label="Raw reads",s=8)
     plt.scatter(df["window"],df["gc_corr_norm_cov"], color="brown", label="GC corrected", s=5, alpha = 0.6)
     plt.scatter(df["window"],df["otr_gc_corr_norm_cov"], color = 'black', label="Ori/Ter bias corrected", s = 10)
-    
-    # plt.plot(df["window"],df["otr_cor_med_fil"], color="green")
+    plt.plot(df["window"], df["otr_gc_corr_fact"], color = "white", label = "OTR-bias-fit-line")
     
     plt.axvline(x=ter, color='r', linestyle=':', label=f'Terminus: {ter}')
     plt.axvline(x=ori, color='r', linestyle=':', label=f'Origin: {ori}')
@@ -450,9 +474,6 @@ def plot_otr_corr(df, sample, output, ori, ter):
     # df.to_csv(csv_full_path)
     
     plt.close()
-
-
-# In[22]:
 
 
 def plot_copy(df_cnv, sample, output):
