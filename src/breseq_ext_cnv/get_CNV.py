@@ -15,7 +15,7 @@ from scipy.optimize import minimize
 from itertools import cycle, islice
 
 def preprocess(filepath:str):
-    df = pd.read_csv(filepath, delimiter = '\t',header = 0, index_col = 0)
+    df = pd.read_csv(filepath, delimiter = '\t',header = 0, index_col = 0, low_memory=False)
     #Get rid of redundant counts of coverage from the input file
     df["unique_cov"] = df["unique_top_cov"]+df["unique_bot_cov"]
     df["redundant"] = df['redundant_top_cov']+df['redundant_bot_cov']
@@ -273,7 +273,7 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, include_zero_state,
         most_probable_state_name = states[most_probable_state]  # Adjust for 0-based indexing
         
         if most_probable_state_name != prev_most_probable_state_name:
-            print(f"Positions {start_pos} - {i * window_length}: Most probable state = {prev_most_probable_state_name}")
+            # print(f"Positions {start_pos} - {i * window_length}: Most probable state = {prev_most_probable_state_name}")
             results = results._append({'Startpos': start_pos, 'Endpos': i * window_length, 
                                       'State': prev_most_probable_state_name}, ignore_index=True)
             start_pos = i * window_length + 1
@@ -288,8 +288,6 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, include_zero_state,
     return results
 
 
-# In[13]:
-
 
 def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero_state=True, error_rate=0.0000001):
     
@@ -297,7 +295,7 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     
-    print("Running HMM...")
+    # print("Running HMM...")
     
     df = bias_correction(filepath,ori,ter)
     
@@ -317,8 +315,6 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
         cor_rc.insert(i, int (df["otr_gc_corr_norm_cov"].iloc[i] * med))
     
     df["otr_gc_corr_rdcnt_cov"] = cor_rc
-    # df['otr_gc_corr_rdcnt_cov'] = df['otr_gc_corr_rdcnt_cov'].replace(0 , 1)
-
     
     new_exp = df.copy()
     
@@ -328,12 +324,12 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
                                           include_zero_state=include_zero_state , error_rate=error_rate)
     this_transition = setup_transition_matrix(n_states, remain_prob=(1 - changeprob), include_zero_state=include_zero_state)
     
-    print("Finished setting up transition and emission matrices. Starting Viterbi algorithm...")
+    # print("Finished setting up transition and emission matrices. Starting Viterbi algorithm...")
     copy_numbers = HMM_copy_number(read_counts, this_transition, this_emission, 
                                    include_zero_state, 500, df['window'].max())
     
 
-    print("Finished running Viterbi algorithm. Assigning most probable states to individual segments...")
+    # print("Finished running Viterbi algorithm. Assigning most probable states to individual segments...")
     
     CN_HMM = []
     
@@ -363,21 +359,22 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
     new_exp.to_csv(csv_full_path)
     copy_numbers.to_csv(brk_full_path)
 
-    print("Copy number analysis complete.")
-    return new_exp
+    print("Copy number prediction complete.")
+    return new_exp, sample
 
 
 # In[14]:
 
 
 def bias_correction(filepath,ori,ter):
+    sample = sample.strip().split('/')[-1]
+    print('f{sample}: Calculating coverage and GC%'' across sliding window over the genome')
     df = preprocess(filepath)
     gc_corr = gc_normalization(df)
+    print('f{sample}: Corrected GC bias in coverage')
     otr_corr = otr_correction(gc_corr, ori, ter)
+    print('f{sample}: Corrected origin/terminus of replication(OTR) bias in coverage')
     return otr_corr
-
-
-# In[24]:
 
 
 def gc_cor_plots(df, sample, output):
@@ -385,7 +382,6 @@ def gc_cor_plots(df, sample, output):
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     
-    # dir_split = filepath.strip().split('/')[:-1]
     saveplt = str('./'+output+"/GC_bias/")
     
     plt.figure(figsize=(10, 8))
@@ -448,7 +444,6 @@ def plot_otr_corr(df, sample, output, ori, ter):
 
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
-    # dir_split = filepath.strip().split('/')[:-1]
     saveplt = str('./'+output+"/OTR_corr/")
   
 
@@ -466,12 +461,9 @@ def plot_otr_corr(df, sample, output, ori, ter):
     plt.legend()
 
     plt_full_path = os.path.join(saveplt,'%s_OTR_corr.png' % samplename.replace(' ', '_'))
-    # csv_full_path = os.path.join(saveloc,'%s_bias-correct.csv' % samplename.replace(' ', '_'))
     
     plt.savefig(plt_full_path, format = 'png', bbox_inches = 'tight')
-
     df.reset_index(drop = True)
-    # df.to_csv(csv_full_path)
     
     plt.close()
 
@@ -480,11 +472,7 @@ def plot_copy(df_cnv, sample, output):
     
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
-    # dir_split = filepath.strip().split('/')[:-1]
     saveplt = str('./'+output+"/CNV_plt/")
-    # saveloc = str('./'+output+"/CNV_csv/")
-    
-    # df_cnv, df_brk = run_HMM(filepath)
     
     plt.figure(figsize=(10, 8))
 
@@ -495,7 +483,6 @@ def plot_copy(df_cnv, sample, output):
     ax1.scatter(df_cnv["window"],df_cnv["read_count_cov"], color="gray", label="Raw reads",s=10)
     ax1.scatter(df_cnv["window"],df_cnv["otr_gc_corr_rdcnt_cov"], color="pink", label="Corrected reads",s=5)
     ax2.scatter(df_cnv["window"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", s=5)
-    # plt.scatter(df["window"],df["otr_cor"], color="lightblue", label="Ori/Ter bias corrected", s=5)
     
     delta = (df_cnv['read_count_cov'].median()*0.4)
     
@@ -503,8 +490,6 @@ def plot_copy(df_cnv, sample, output):
     ax1.set_ylim(df_cnv['read_count_cov'].min() - delta, df_cnv['read_count_cov'].max() + delta)
     ax2.set_ylim(df_cnv['norm_raw_cov'].min() - 0.4, df_cnv['norm_raw_cov'].max() + 0.4)
     
-    # plt.axvline(x=ter, color='r', linestyle=':', label=f'Terminus: {ter}')
-    # plt.axvline(x=ori, color='r', linestyle=':', label=f'Origin: {ori}')
     ax1.set_xlabel("Window (Genomic position)")
     ax2.yaxis.label.set_color('red')
     ax1.set_ylabel("Read Counts")
@@ -515,15 +500,7 @@ def plot_copy(df_cnv, sample, output):
     # ax2.legend()
     
     plt_full_path = os.path.join(saveplt,'%s_copy_numbers.png' % samplename)
-    # csv_full_path = os.path.join(saveloc,'%s_CNV.csv' % samplename)
-    # brk_full_path = os.path.join(saveloc,'%s_break_pts.csv' % samplename)
-    
-    # pdf = PdfPages(pdf_full_path)
     plt.savefig(plt_full_path, format = 'png', bbox_inches = 'tight')
-
-    # df_cnv.reset_index(drop = True)
-    # df_cnv.to_csv(csv_full_path)
-    # df_brk.to_csv(brk_full_path)
     
     plt.close()
 
@@ -533,18 +510,6 @@ def plot_copy(df_cnv, sample, output):
 
 def main():
     
-    import os
-    import pandas as pd
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import statsmodels.api as sm
-    # from scipy import ndimage
-    from scipy.special import gammaln
-    from scipy.stats import geom
-    import seaborn as sns
-    from pathlib import Path
-    import argparse
-
     parser = argparse.ArgumentParser(description = "Input .tab file from breseq bam2cov")
 
     # Define the command line arguments
@@ -599,7 +564,7 @@ def main():
         Path(out_dir+out_subdirs[i]).mkdir(parents=True, exist_ok=True)
 
     # Call the copy number (HMM) function with the provided options
-    cnv = run_HMM(
+    cnv,smpl = run_HMM(
         sample=options.i,
         output = options.o,
         ori=options.ori,
@@ -608,8 +573,11 @@ def main():
     
     #Call the plotting functions to visualize bias correction and copy number predictions
     gc_cor_plots(cnv, sample=options.i, output=options.o)
+    print('f{smpl}: GC bias vs coverage plots saved')
     plot_otr_corr(cnv, sample=options.i, output=options.o, ori=options.ori, ter=options.ter)
+    print('f{smpl}: OTR bias vs coverage plots saved')
     plot_copy(cnv, sample=options.i, output=options.o)
+    print('f{smpl}: CNV prediction plots saved')
 
 
 if __name__ == "__main__":
