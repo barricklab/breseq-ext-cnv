@@ -519,8 +519,9 @@ def plot_copy(df_cnv, sample, output):
 
 
 def main():
-    
-    parser = argparse.ArgumentParser(description = "Input .tab file from breseq bam2cov /n breseq bam2cov -t[--table] --resolution <No. of parts in which to divide the coverage region. Default 0: single base resolution> --region <reference:START-END> --output <filename>")
+    from argparse import RawTextHelpFormatter
+
+    parser = argparse.ArgumentParser(description = "Input .tab file from breseq bam2cov: \n \n```\nbreseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename> \n```" , formatter_class = RawTextHelpFormatter)
 
     # Define the command line arguments
     parser.add_argument(

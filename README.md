@@ -13,6 +13,13 @@ Install breseq-ext-cnv
 pip install git+https://github.com/barricklab/breseq-ext-cnv.git
 ```
 **Run:**
+
+Run BAM2COV on *breseq* output to get the coverage table: 
+```
+breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
+```
+With the coverage table as the input determine regions of copy number variation using: 
+
 ```
 breseq-ext-cnv -i <input file> [-o <output folder location>]
 ```
@@ -21,6 +28,10 @@ breseq-ext-cnv --help
 usage: breseq-ext-cnv [-h] -i I [-o O] [-ori ORI] [-ter TER]
 
 Input .tab file from breseq bam2cov
+
+```
+breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
+```
 
 options:
   -h, --help            show this help message and exit
