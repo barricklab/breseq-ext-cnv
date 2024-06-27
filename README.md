@@ -29,9 +29,7 @@ usage: breseq-ext-cnv [-h] -i I [-o O] [-ori ORI] [-ter TER]
 
 Input .tab file from breseq bam2cov
 
-```
 breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
-```
 
 options:
   -h, --help            show this help message and exit
