@@ -2,6 +2,7 @@
 # coding: utf-8
 
 import os
+import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ from pathlib import Path
 from scipy.optimize import minimize
 from itertools import cycle, islice
 
-def preprocess(filepath:str):
+def preprocess(filepath:str, win = 1000, step = 500):
     df = pd.read_csv(filepath, delimiter = '\t',header = 0, index_col = 0, low_memory=False)
     #Get rid of redundant counts of coverage from the input file
     df["unique_cov"] = df["unique_top_cov"]+df["unique_bot_cov"]
@@ -33,17 +34,19 @@ def preprocess(filepath:str):
     window = []
     window_med_cov = []
     gc_df = pd.DataFrame(columns = ("window","sequence"))
-    win_len = 1000
-    win_shift = 500
+    win_len = win
+    win_shift = step
+    if win_shift > win_len:
+        return print("Error: step size must be less than or equal to the window length!")
     i = 0
-    #inspect the genome contents through a sliding window of 1000bp
+    #inspect the genome contents through a sliding window
     while(i <= (genome_len - win_len)):
         winseq = genome[i:(i + win_len)]
         seq.insert(i,str(''.join(str(element) for element in winseq)))
         gcc = np.count_nonzero(winseq == 'G') + np.count_nonzero(winseq == 'C')
         gccp = (gcc/win_len)*100
         gcp_s.insert(i,gccp)
-        window_med_cov.insert(i,float(df.iloc[i:(i + win_len),9].median()))
+        window_med_cov.insert(i,float(df["unique_cov"].iloc[i:(i + win_len)].median()))
         window.insert(i,i + win_len)
         i = i + win_shift
 
@@ -75,7 +78,7 @@ def gc_normalization(df):
     gc = df["gc_percent"]
     
     lowess1 = sm.nonparametric.lowess
-    gc_out = lowess1(cov, gc,frac=0.8, it=3, delta=0.0, is_sorted=False, missing='none', return_sorted=False)    
+    gc_out = lowess1(cov, gc,frac=0.666, it=3, delta=0.0, is_sorted=False, return_sorted=False)    
 
     df["gc_corr_norm_cov"] = cov/gc_out
     
@@ -172,7 +175,23 @@ def otr_correction(filepath, ori, ter):
     df["otr_gc_corr_norm_cov"] = h1
     df["otr_gc_corr_fact"] = f1   
     
-    return df
+    res_dict = {}
+
+    yfit_ori = np.max(f1)
+    yfit_ter = np.min(f1)
+
+    i_max = df["otr_gc_corr_fact"].idxmax()
+    i_min = df["otr_gc_corr_fact"].idxmin()
+
+    xfit_ori = int(df["window"].iloc[i_max])
+    xfit_ter = int(df["window"].iloc[i_min])
+
+    OTR = yfit_ori / yfit_ter
+
+    results = {"Origin window":xfit_ori, "Origin coverage (normalized)":yfit_ori, "Terminus window":xfit_ter, "Terminus coverage (normalized)":yfit_ter, "Origin-to-Termius/Bias Ratio":OTR }
+
+
+    return df, results
 
 
 
@@ -299,7 +318,7 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, include_zero_state,
 
 
 
-def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero_state=True, error_rate=0.0000001):
+def run_HMM(sample, output, ori, ter, win, step, n_states=5, changeprob=0.0001, include_zero_state=True, error_rate=0.0000001):
     
     filepath = sample
     sample = sample.strip().split('/')[-1]
@@ -307,7 +326,7 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
     
     # print("Running HMM...")
     
-    df = bias_correction(filepath,ori,ter)
+    df = bias_correction(filepath, output, ori, ter, win, step)
     
     med = df["read_count_cov"].median()
     cor_rc = []
@@ -336,7 +355,7 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
     
     # print("Finished setting up transition and emission matrices. Starting Viterbi algorithm...")
     copy_numbers = HMM_copy_number(read_counts, this_transition, this_emission, 
-                                   include_zero_state, 500, df['window'].max())
+                                   include_zero_state, step, df['window'].max())
     
 
     # print("Finished running Viterbi algorithm. Assigning most probable states to individual segments...")
@@ -359,8 +378,8 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
     
     new_exp['prob_copy_number'] = CN_HMM
     
-    saveplt = str('./'+output+"/CNV_plt/")
-    saveloc = str('./'+output+"/CNV_csv/")
+    saveplt = str(output+"/CNV_plt/")
+    saveloc = str(output+"/CNV_csv/")
 
     csv_full_path = os.path.join(saveloc,'%s_CNV.csv' % samplename)
     brk_full_path = os.path.join(saveloc,'%s_break_pts.csv' % samplename)
@@ -376,13 +395,17 @@ def run_HMM(sample, output, ori, ter,n_states=5, changeprob=0.0001, include_zero
 # In[14]:
 
 
-def bias_correction(filepath,ori,ter):
+def bias_correction(filepath, output, ori, ter, win, step):
     sample = filepath.strip().split('/')[-1]
+    samplename = sample.strip().split('.')[0]
+    saveplt = str(output+"/OTR_corr/")
     print(f'{sample}: Calculating coverage and GC% across sliding window over the genome.')
-    df = preprocess(filepath)
+    df = preprocess(filepath, win, step)
     gc_corr = gc_normalization(df)
     print(f'{sample}: Corrected GC bias in coverage.')
-    otr_corr = otr_correction(gc_corr, ori, ter)
+    otr_corr, otr_res = otr_correction(gc_corr, ori, ter)
+    with open(saveplt+str(samplename)+'_otr_results.json', 'w') as f:
+        json.dump(otr_res, f, indent = 4)
     print(f'{sample}: Corrected origin/terminus of replication(OTR) bias in coverage.')
     return otr_corr
 
@@ -392,14 +415,15 @@ def gc_cor_plots(df, sample, output):
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     
-    saveplt = str('./'+output+"/GC_bias/")
+    saveplt = str(output+"/GC_bias/")
     
     plt.figure(figsize=(10, 8))
     
     
     plt.scatter(df['gc_percent'], df['norm_raw_cov'], color='lightblue', label='Raw normalized reads vs GC', s=5)
     plt.scatter(df["gc_percent"], df["gc_corr_norm_cov"], color="darkblue", label='Corrected normalized reads', s=10, alpha = 0.7)
-    
+    plt.plot(df['gc_percent'], df['gc_corr_fact'], color='black', label='LOWESS fit')
+
     # Adding labels and title
     plt.ylabel('Normalized read coverage')
     plt.xlabel('GC% per window')
@@ -454,7 +478,7 @@ def plot_otr_corr(df, sample, output, ori, ter):
 
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
-    saveplt = str('./'+output+"/OTR_corr/")
+    saveplt = str(output+"/OTR_corr/")
   
 
     plt.figure(figsize=(10, 8))
@@ -482,7 +506,7 @@ def plot_copy(df_cnv, sample, output):
     
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
-    saveplt = str('./'+output+"/CNV_plt/")
+    saveplt = str(output+"/CNV_plt/")
     
     plt.figure(figsize=(10, 8))
 
@@ -520,8 +544,15 @@ def plot_copy(df_cnv, sample, output):
 
 def main():
     from argparse import RawTextHelpFormatter
+    import textwrap
 
-    parser = argparse.ArgumentParser(description = "Input .tab file from breseq bam2cov: \n \n```\nbreseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename> \n```" , formatter_class = RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description = "The breseq-ext-cnv is python package extension to breseq that analyzes the sequencing coverage across the genome to determine specific regions that have undergone copy number variation (CNV)",
+                                        epilog=textwrap.dedent('''\
+                                        Input .tab file from breseq bam2cov. To get the coverage file run the command below in your breseq directory which contains the 'data' and 'output' folders. 
+                                        ```
+                                        breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename> 
+                                        ```'''), 
+                                        formatter_class = RawTextHelpFormatter)
 
     # Define the command line arguments
     parser.add_argument(
@@ -544,6 +575,27 @@ def main():
         type=str,
         help="output file location preference. Defaults to the current folder",
     )
+
+    parser.add_argument(
+        "-w",
+        "--window",
+        action="store",
+        dest="w",
+        required=False,
+        type=int,
+        help="Define window length to parse through the genome and calculate coverage and GC statistics",
+    )
+
+    parser.add_argument(
+        "-s",
+        "--step-size",
+        action="store",
+        dest="s",
+        required=False,
+        type=int,
+        help="Define step size for each progression of the window across the genome sequence. Must be <= window size",
+    )
+
     parser.add_argument(
         "-ori",
         "--origin",
@@ -565,6 +617,8 @@ def main():
         help="Genomic coordinate for terminus of replication",
     )
     
+    # parser.print_help()
+
     # Parse the command line arguments
     options = parser.parse_args()
     
@@ -580,6 +634,8 @@ def main():
         output = options.o,
         ori=options.ori,
         ter=options.ter,
+        win=options.w,
+        step=options.s
     )
     
     #Call the plotting functions to visualize bias correction and copy number predictions
