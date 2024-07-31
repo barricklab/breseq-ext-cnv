@@ -1,10 +1,12 @@
 LICENSE
 README.md
 pyproject.toml
+requirements.txt
 src/breseq_ext_cnv/__init__.py
 src/breseq_ext_cnv/get_CNV.py
 src/breseq_ext_cnv.egg-info/PKG-INFO
 src/breseq_ext_cnv.egg-info/SOURCES.txt
 src/breseq_ext_cnv.egg-info/dependency_links.txt
 src/breseq_ext_cnv.egg-info/entry_points.txt
+src/breseq_ext_cnv.egg-info/requires.txt
 src/breseq_ext_cnv.egg-info/top_level.txt
