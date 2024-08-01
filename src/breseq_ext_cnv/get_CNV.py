@@ -72,7 +72,7 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
             else:
                 break
 
-        if (winu >= (win-step)):
+        if (winu > (win-step)):
             window_med_cov.insert(i,float(np.nanmedian(win_cov)))
             winseq = genome[i:i+winu]
             seq.insert(i,str(''.join(str(element) for element in winseq)))
@@ -157,7 +157,6 @@ def gc_normalization(df):
     
 
     df["gc_corr_fact"] = gc_out
-    # df.to_csv('./GC_corr.csv') 
     
     return df
 
@@ -320,7 +319,7 @@ def otr_correction(filepath, ori, ter, enforce):
         results = {"Origin location":ori, "Origin coverage (normalized)":yori,"Terminus window":ter, "Terminus coverage (normalized)":yter, "Origin-to-Termius/Bias Ratio":OTR, "Correction type" : "Ori-ter defined by user" }
         df["otr_gc_corr_norm_cov"] = h1
         df["otr_gc_corr_fact"] = f1
-        df.to_csv('./OTR_corr.csv')       
+        
         return df, results, ori, ter 
     else:
         h1, f1 , ori_idx, ter_idx = otr_fit(df)
@@ -333,7 +332,7 @@ def otr_correction(filepath, ori, ter, enforce):
         results = {"Origin window":int(xori), "Origin coverage (normalized)":yori, "Terminus window":int(xter), "Terminus coverage (normalized)":yter, "Origin-to-Termius/Bias Ratio":OTR, "Correction type" : "Ori-ter coordinates fit by coverage" }
         df["otr_gc_corr_norm_cov"] = h1
         df["otr_gc_corr_fact"] = f1 
-        df.to_csv('./OTR_corr.csv')       
+        
         return df, results, xori, xter
 
 
@@ -459,7 +458,6 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, include_zero_state,
     results = results._append({'Startpos': start_pos, 'Endpos': chr_length, 
                               'State': prev_most_probable_state_name}, ignore_index=True)
     
-    results.to_csv("./brk_pts.csv")
     return results
 
 
@@ -744,7 +742,7 @@ def main():
         action="store",
         dest="w",
         required=False,
-        default = 1000,
+        # default = 1000,
         type=int,
         help="Define window length to parse through the genome and calculate coverage and GC statistics.",
     )
@@ -755,7 +753,7 @@ def main():
         action="store",
         dest="s",
         required=False,
-        default = 500,
+        # default = 500,
         type=int,
         help="Define step size (<= window size) for each progression of the window across the genome sequence. Set = window size if non-overlapping windows.",
     )

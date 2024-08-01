@@ -9,7 +9,7 @@ include-package-data = true
 
 [project]
 name = "breseq-ext-cnv"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
 	{name = "Pranesh Rao", email = "pranesh.rao@utexas.edu"},
 	{name = "Jefferey Barrick", email = "jbarrick@utexas.edu"}
