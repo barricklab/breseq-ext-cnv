@@ -642,10 +642,10 @@ def plot_otr_corr(df, sample, output, ori, ter):
   
 
     plt.figure(figsize=(10, 8))
-    plt.scatter(df["window"],df["norm_raw_cov"], color="gray", label="Raw reads",s=8)
-    plt.scatter(df["window"],df["gc_corr_norm_cov"], color="brown", label="GC corrected", s=5, alpha = 0.6)
-    plt.scatter(df["window"],df["otr_gc_corr_norm_cov"], color = 'black', label="Ori/Ter bias corrected", s = 10)
-    plt.plot(df["window"], df["otr_gc_corr_fact"], color = "white", label = "OTR-bias-fit-line")
+    plt.scatter(df["win_st"],df["norm_raw_cov"], color="gray", label="Raw reads",s=8)
+    plt.scatter(df["win_st"],df["gc_corr_norm_cov"], color="brown", label="GC corrected", s=5, alpha = 0.6)
+    plt.scatter(df["win_st"],df["otr_gc_corr_norm_cov"], color = 'black', label="Ori/Ter bias corrected", s = 10)
+    plt.plot(df["win_st"], df["otr_gc_corr_fact"], color = "white", label = "OTR-bias-fit-line")
     
     plt.axvline(x=ter, color='r', linestyle=':', label=f'Terminus: {ter}')
     plt.axvline(x=ori, color='r', linestyle=':', label=f'Origin: {ori}')
@@ -674,9 +674,9 @@ def plot_copy(df_cnv, sample, output):
 
     ax2 = ax1.twinx()
 
-    ax1.scatter(df_cnv["window"],df_cnv["read_count_cov"], color="gray", label="Raw reads",s=10)
-    ax1.scatter(df_cnv["window"],df_cnv["otr_gc_corr_rdcnt_cov"], color="pink", label="Corrected reads",s=5)
-    ax2.scatter(df_cnv["window"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", s=3)
+    ax1.scatter(df_cnv["win_st"],df_cnv["read_count_cov"], color="gray", label="Raw reads",s=10)
+    ax1.scatter(df_cnv["win_st"],df_cnv["otr_gc_corr_rdcnt_cov"], color="pink", label="Corrected reads",s=5)
+    ax2.scatter(df_cnv["win_st"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", s=3)
     
     delta = (df_cnv['read_count_cov'].median()*0.4)
     
