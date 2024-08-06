@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: breseq-ext-cnv
-Version: 0.0.2
+Version: 0.0.3
 Summary: An extension of breseq to determine copy number variations from coverage data
 Author-email: Pranesh Rao <pranesh.rao@utexas.edu>, Jefferey Barrick <jbarrick@utexas.edu>
 Classifier: Programming Language :: Python :: 3
