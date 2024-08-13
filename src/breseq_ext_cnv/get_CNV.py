@@ -47,18 +47,18 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
     
     df_b2c["cov_type"] = df_b2c["redundant"].apply(lambda x: 'R' if x > 0 else 'U')
     
-    df_gc = pd.DataFrame(columns=["window","sequence"])
+    df_gc = pd.DataFrame(columns=["window_num"])
     
     cov_dict = {}
     i=0
     lst_win = 0
     #sliding window with size = win and increment size = step summarizes GC% and median coverage
     while (i <= (genome_len-1)) and (lst_win < genome_len):
-        if (df_b2c["cov_type"].iloc[i] == "R"):
-            i+=1
-            continue
-        else:
-            pass
+        # if (df_b2c["cov_type"].iloc[i] == "R"):
+        #     i+=1
+        #     continue
+        # else:
+        #     pass
         
         win_full_cov = df_b2c["unique_cov"].iloc[i : (i+win)].to_numpy()
         cov_type = df_b2c["cov_type"].iloc[i : (i+win)].to_numpy()
@@ -72,11 +72,14 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
             else:
                 break
 
-        if (winu > (win-step)):
+        if (winu < win):
+
+            i = i + step
+
+        else:
             window_med_cov.insert(i,float(np.nanmedian(win_cov)))
             winseq = genome[i:i+winu]
             seq.insert(i,str(''.join(str(element) for element in winseq)))
-            win_cov_type.insert(i,str(''.join(str(element) for element in cov_type[:winu])))
             window.insert(i, i)
             win_end.insert(i,i+winu)
             lst_win = win_end[(len(win_end)-1)]
@@ -102,40 +105,26 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
                 gcp_s.insert(i,gccp)
 
             i = i + step
-
-        else:
-
-            i = i + winu
-
     #Save the window median and 
     df_gc["win_st"] = window
     df_gc["win_end"] = win_end
     df_gc["win_len"] = df_gc["win_end"] - df_gc["win_st"]
-    df_gc["fragment"] = fragment
+    # df_gc["fragment"] = fragment
     # df_gc["frag_cov"] = frag_full_cov
     # df_gc["window_cov_type"] = win_cov_type
     df_gc["gc_percent"] = gcp_s
-    df_gc["sequence"] = seq
+    # df_gc["sequence"] = seq
     df_gc["read_count_cov"] = window_med_cov
-    df_gc["window"] = np.arange(0,len(window_med_cov),1)
+    df_gc["window_num"] = np.arange(0,len(window_med_cov),1)
 
     # df_gc["frag_norm_cov"] = df_gc["frag_cov"]/df_gc["frag_cov"].median()
     df_gc["norm_raw_cov"] = df_gc["read_count_cov"]/df_gc["read_count_cov"].median()
     return df_gc
 
 
-# In[10]:
-
-
-def find_nearest(array, value):
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return idx
-
 def gc_normalization(df):
 
     # df, ori, ter = preprocess(filepath)
-    windows = df["window"]
     
     cov = df["norm_raw_cov"]
     # frag_cov = df["frag_norm_cov"]
@@ -145,11 +134,7 @@ def gc_normalization(df):
     lowess1 = sm.nonparametric.lowess
     gc_out = lowess1(cov, gc, frac=0.05, it=1, delta=0.0, is_sorted=False, missing='none', return_sorted=False)    
 
-    # corr_fact = cov/gc_out
     gc_corr = cov/gc_out
-
-    # for i in range(len(df)):
-    #     gc_corr.insert(i, (med * corr_fact[i]))
 
     df["gc_corr_norm_cov"] = gc_corr
     
@@ -301,10 +286,15 @@ def otr_set(df, ter_idx, ori_idx):
     
     return y_corr, y_fit
 
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
+
 def otr_correction(filepath, ori, ter, enforce):
 
     df = gc_normalization(filepath)
-    windows = df["window"]
+    windows = df["window_num"]
     
     corr = []
     
@@ -324,8 +314,8 @@ def otr_correction(filepath, ori, ter, enforce):
     else:
         h1, f1 , ori_idx, ter_idx = otr_fit(df)
         
-        xori = df["window"].iloc[ori_idx]
-        xter = df["window"].iloc[ter_idx]
+        xori = df["win_st"].iloc[ori_idx]
+        xter = df["win_end"].iloc[ter_idx]
         yori = f1[ori_idx]
         yter = f1[ter_idx]
         OTR = yori / yter
@@ -347,7 +337,7 @@ def calculate_prob(p, r, obs):
     probs = np.exp(gammaln(r + obs) - gammaln(obs + 1) - gammaln(r) + obs * np.log(p) + r * np.log(1 - p))
     return probs
 
-def setup_emission_matrix(n_states, mean, variance, absmax, include_zero_state=True, error_rate=0):
+def setup_emission_matrix(n_states, mean, variance, absmax, error_rate):
     emission = np.full((n_states, absmax + 1), np.nan)
     
     for state in range(n_states):
@@ -358,19 +348,16 @@ def setup_emission_matrix(n_states, mean, variance, absmax, include_zero_state=T
             # Ensure obs is converted to a float or NumPy array before applying np.log
             emission[state, obs] = calculate_prob(p, r, obs)
     
-    if include_zero_state:
-        zero_row = np.array([geom.pmf(i, 1 - error_rate, loc =-1) for i in range(absmax + 1)])
-        emission = np.vstack((zero_row, emission))
+    
+    zero_row = np.array([geom.pmf(i, 1 - error_rate, loc = -1) for i in range(absmax + 1)])
+    emission = np.vstack((zero_row, emission))
     # np.savetxt("emission.csv", emission, delimiter=",")  
     return emission
 
 
-# In[21]:
-
-
-def setup_transition_matrix(n_states, remain_prob, include_zero_state=True):
-    if include_zero_state:
-        n_states += 1
+def setup_transition_matrix(n_states, remain_prob):
+    #include zero state:
+    n_states += 1
     
     change_prob = 1 - remain_prob
     per_state_prob = change_prob / (n_states - 1)
@@ -386,7 +373,7 @@ def setup_transition_matrix(n_states, remain_prob, include_zero_state=True):
 # In[93]:
 
 
-def make_viterbi_mat(obs, transition_matrix, emission_matrix, include_zero_state):
+def make_viterbi_mat(obs, transition_matrix, emission_matrix):
     num_states = transition_matrix.shape[0]
     
     # Create a mask for the zero values
@@ -402,12 +389,11 @@ def make_viterbi_mat(obs, transition_matrix, emission_matrix, include_zero_state
     logtrans = np.log(transition_matrix)
     # logemi = np.log(emission_matrix)
     
-    logv[0,:] = np.log(1.0e-10)
+    logv[0,:] = -np.inf
     
-    if include_zero_state:
-        logv[0, 1] = np.log(1)
-    else:
-        logv[0, 0] = np.log(1)
+    #start prob of state =1 when including zero state
+
+    logv[0, 1] = np.log(1e-100)
     
     for i in range(1, len(obs)):
         for l in range(num_states):
@@ -421,12 +407,12 @@ def make_viterbi_mat(obs, transition_matrix, emission_matrix, include_zero_state
 # In[88]:
 
 
-def HMM_copy_number(obs, transition_matrix, emission_matrix, include_zero_state, win_st, win_end, chr_length):
+def HMM_copy_number(obs, transition_matrix, emission_matrix, win_st, win_end, chr_length):
     states = np.arange(0, emission_matrix.shape[0] + 1)  # Assuming state indices start from 1
     
     # print("Attempting to create Viterbi matrix")
     
-    v = make_viterbi_mat(obs, transition_matrix, emission_matrix, include_zero_state)
+    v = make_viterbi_mat(obs, transition_matrix, emission_matrix)
             
     # Go through each of the rows of the matrix v and find out which column has the maximum value for that row
     most_probable_state_path = np.argmax(v, axis=1)
@@ -462,7 +448,7 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, include_zero_state,
 
 
 
-def run_HMM(sample, output, ori, ter, enforce, win, step, frag, n_states=5, changeprob=0.0001, include_zero_state=True, error_rate=0.0000001):
+def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
     
     filepath = sample
     sample = sample.strip().split('/')[-1]
@@ -477,32 +463,24 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, n_states=5, chan
     for i in range(len(df)):
         cor_rc.insert(i, int (df["otr_gc_corr_norm_cov"].iloc[i] * med))
     
-    read_counts = cor_rc
-    win_len = df["win_end"] - df["win_st"]
-    mean = np.mean(df["read_count_cov"])
-    var = np.var(df["read_count_cov"])
+    df['win_len'] = df["win_end"] - df["win_st"]
+    mean = np.median(cor_rc)
+    var = np.var(cor_rc)
     
-    med = df["read_count_cov"].median()
-    cor_rc = []
-    for i in range(len(df)):
-        cor_rc.insert(i, int (df["otr_gc_corr_norm_cov"].iloc[i] * med))
     
     df["otr_gc_corr_rdcnt_cov"] = cor_rc
-    df["win_len"] = win_len
     
-    n_states = int(df["otr_gc_corr_norm_cov"].max())
+    n_states = int(df["otr_gc_corr_norm_cov"].max()) if int(df["otr_gc_corr_norm_cov"].max()) > 5 else 5
 
     new_exp = df.copy()
     
-    rc_max = np.max(read_counts)
+    rc_max = np.max(cor_rc)
     
-    this_emission = setup_emission_matrix(n_states=n_states, mean=mean, variance=var, absmax=rc_max, 
-                                          include_zero_state=include_zero_state , error_rate=error_rate)
-    this_transition = setup_transition_matrix(n_states, remain_prob=(1 - changeprob), include_zero_state=include_zero_state)
+    this_emission = setup_emission_matrix(n_states=n_states, mean=mean, variance=var, absmax=rc_max, error_rate=error_rate)
+    this_transition = setup_transition_matrix(n_states, remain_prob=(1 - changeprob))
     
     # print("Finished setting up transition and emission matrices. Starting Viterbi algorithm...")
-    copy_numbers = HMM_copy_number(read_counts, this_transition, this_emission, 
-                                   include_zero_state, df["win_st"], df["win_end"], df['win_end'].max())
+    copy_numbers = HMM_copy_number(cor_rc, this_transition, this_emission, df["win_st"], df["win_end"], df['win_end'].max())
     
 
     # print("Finished running Viterbi algorithm. Assigning most probable states to individual segments...")
@@ -545,8 +523,11 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, n_states=5, chan
     brk_full_path = os.path.join(saveloc,'%s_break_pts.csv' % samplename)
 
     new_exp.reset_index(drop = True)
-    new_exp.to_csv(csv_full_path)
-    copy_numbers.to_csv(brk_full_path)
+    new_exp.to_csv(csv_full_path, index = False)
+    cn_brk = pd.DataFrame(copy_numbers,columns=['Startpos','Endpos', 'State'])
+    cn_brk['Segment_Size'] = cn_brk['Endpos'] - cn_brk['Startpos']
+    cn_brk.drop(columns='Endpos', inplace = True)
+    cn_brk.to_csv(brk_full_path, index = False)
 
     print(f"{sample}: Copy number prediction complete. .csv files saved.")
     return new_exp, sample, ori_loc, ter_loc
@@ -579,25 +560,24 @@ def gc_cor_plots(df, sample, output):
     
     plt.figure(figsize=(10, 8))
     
-    
+    gc_fit = np.poly1d(np.polyfit(df['gc_percent'].unique(), df['gc_corr_fact'].unique(), 2))
+
     plt.scatter(df['gc_percent'], df['norm_raw_cov'], color='brown', label='Raw normalized reads vs GC', s=5)
-    plt.scatter(df["gc_percent"], df["gc_corr_norm_cov"], color="green", label='Corrected normalized reads', s=10, alpha = 0.3)
-    plt.plot(df['gc_percent'], df['gc_corr_fact'], color='black', label='LOWESS fit')
+    plt.scatter(df['gc_percent'], df['gc_corr_norm_cov'], color="green", label='Corrected normalized reads', s=10, alpha = 0.3)
+    plt.plot(np.sort(df['gc_percent'].unique()), gc_fit(np.sort(df['gc_percent'].unique())), color = 'black', linewidth = 3, label = 'LOWESS fit')
+    # plt.plot(df['gc_percent'], df['gc_corr_fact'], color='black', label='LOWESS fit')
 
     # Adding labels and title
     plt.ylabel('Normalized read coverage')
     plt.xlabel('GC% per window')
     
     plt.title(f'{samplename}_GCvsNormalizedReads')
-    plt.legend()
+    plt.legend(loc = 'upper right')
 
-    plt_full_path =os.path.join(saveplt,'%s_GC_vs_NormRds.png' % samplename.replace(' ', '_'))
-    plt.savefig(plt_full_path, format = 'png', bbox_inches = 'tight')
+    plt_full_path =os.path.join(saveplt,'%s_GC_vs_NormRds.pdf' % samplename.replace(' ', '_'))
+    plt.savefig(plt_full_path, format = 'pdf', bbox_inches = 'tight')
     
     plt.close()
-
-
-# In[25]:
 
 
 # def plot_gc_cor(df, samplename):
@@ -652,11 +632,11 @@ def plot_otr_corr(df, sample, output, ori, ter):
     plt.xlabel("Window (Genomic position)")
     plt.ylabel("Normalized read coverage")
     plt.title(f'{samplename}_Ori/Ter bias correction')
-    plt.legend()
+    plt.legend(loc = 'upper right')
 
-    plt_full_path = os.path.join(saveplt,'%s_OTR_corr.png' % samplename.replace(' ', '_'))
+    plt_full_path = os.path.join(saveplt,'%s_OTR_corr.pdf' % samplename.replace(' ', '_'))
     
-    plt.savefig(plt_full_path, format = 'png', bbox_inches = 'tight')
+    plt.savefig(plt_full_path, format = 'pdf', bbox_inches = 'tight')
     df.reset_index(drop = True)
     
     plt.close()
@@ -678,11 +658,11 @@ def plot_copy(df_cnv, sample, output):
     ax1.scatter(df_cnv["win_st"],df_cnv["otr_gc_corr_rdcnt_cov"], color="pink", label="Corrected reads",s=5)
     ax2.scatter(df_cnv["win_st"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", s=3)
     
-    delta = (df_cnv['read_count_cov'].median()*0.4)
+    delta = (df_cnv['read_count_cov'].median()*0.5)
     
     
     ax1.set_ylim(df_cnv['read_count_cov'].min() - delta, df_cnv['read_count_cov'].max() + delta)
-    ax2.set_ylim(df_cnv['norm_raw_cov'].min() - 0.4, df_cnv['norm_raw_cov'].max() + 0.4)
+    ax2.set_ylim(df_cnv['otr_gc_corr_norm_cov'].min() - 0.5, df_cnv['otr_gc_corr_norm_cov'].max() + 0.5)
     
     ax1.set_xlabel("Window (Genomic position)")
     ax2.yaxis.label.set_color('red')
@@ -690,16 +670,13 @@ def plot_copy(df_cnv, sample, output):
     ax2.set_ylabel("Copy Numbers")
     plt.title(f'{samplename}_Copy Number Prediction')
     
-    ax1.legend()
+    ax1.legend(loc = 'upper right')
     # ax2.legend()
     
-    plt_full_path = os.path.join(saveplt,'%s_copy_numbers.png' % samplename)
-    plt.savefig(plt_full_path, format = 'png', bbox_inches = 'tight')
+    plt_full_path = os.path.join(saveplt,'%s_copy_numbers.pdf' % samplename)
+    plt.savefig(plt_full_path, format = 'pdf', bbox_inches = 'tight')
     
     plt.close()
-
-
-# In[28]:
 
 
 def main():
@@ -788,6 +765,16 @@ def main():
         type=int,
         help="Average fragment size of the sequencing reads.",
     )
+    parser.add_argument(
+        "-e",
+        "--error-rate",
+        action="store",
+        dest="e",
+        default=0.20,
+        required=False,
+        type=float,
+        help="Error rate in requencing read coverage, taken into account to accurately determine 0 copy coverage.",
+    )
     # parser.print_help()
 
     # Parse the command line arguments
@@ -813,7 +800,8 @@ def main():
             enforce=True,
             win=options.w,
             step=options.s,
-            frag=options.f
+            frag=options.f,
+            error_rate=options.e
         )
     else:
         options.ori=None,
@@ -828,7 +816,8 @@ def main():
             enforce=False,
             win=options.w,
             step=options.s,
-            frag=options.f
+            frag=options.f,
+            error_rate=options.e
         )
     
     #Call the plotting functions to visualize bias correction and copy number predictions
