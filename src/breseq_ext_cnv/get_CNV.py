@@ -773,7 +773,7 @@ def main():
         default=0.20,
         required=False,
         type=float,
-        help="Error rate in requencing read coverage, taken into account to accurately determine 0 copy coverage.",
+        help="Error rate in sequencing read coverage, taken into account to accurately determine 0 copy coverage.",
     )
     # parser.print_help()
 

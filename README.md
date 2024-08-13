@@ -42,7 +42,7 @@ options:
   -ter TER, --terminus TER
                         Genomic coordinate for terminus of replication.
   -f F, --frag_size F   Average fragment size of the sequencing reads.
-  -e E, --error-rate E  Error rate in requencing read coverage, taken into account to accurately determine 0 copy coverage.
+  -e E, --error-rate E  Error rate in sequencing read coverage, taken into account to accurately determine 0 copy coverage.
 
 Input .tab file from breseq bam2cov. To get the coverage file run the command below in your breseq directory which contains the 'data' and 'output' folders.
 ```
