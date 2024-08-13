@@ -23,8 +23,11 @@ With the coverage table as the input determine regions of copy number variation 
 ```
 breseq-ext-cnv -i <input file> [-o <output folder location>] [-w <window>] [-s <step size>]
 ```
+
 ```
-usage: get_CNV.py [-h] -i I [-o O] [-w W] [-s S] [-ori ORI] [-ter TER] [-f F]
+$breseq-ext-cnv -h
+
+usage: get_CNV.py [-h] -i I [-o O] [-w W] [-s S] [-ori ORI] [-ter TER] [-f F] [-e E]
 
 The breseq-ext-cnv is python package extension to breseq that analyzes the sequencing coverage across the genome to determine specific regions that have undergone copy number variation (CNV)
 
@@ -39,9 +42,12 @@ options:
   -ter TER, --terminus TER
                         Genomic coordinate for terminus of replication.
   -f F, --frag_size F   Average fragment size of the sequencing reads.
+  -e E, --error-rate E  Error rate in requencing read coverage, taken into account to accurately determine 0 copy coverage.
 
 Input .tab file from breseq bam2cov. To get the coverage file run the command below in your breseq directory which contains the 'data' and 'output' folders.
-'```
-breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
-```'
 ```
+
+```
+breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
+```
+
