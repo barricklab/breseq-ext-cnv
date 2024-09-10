@@ -10,7 +10,7 @@ conda activate <env-name>
 ```
 Install breseq-ext-cnv
 ```
-pip install git+https://github.com/barricklab/breseq-ext-cnv.git
+pip install breseq-ext-cnv
 ```
 **Run:**
 
