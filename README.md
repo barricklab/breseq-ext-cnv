@@ -3,9 +3,9 @@
 
 **Installation:**
 
-Create python environment. 
+Recommended: Create conda python environment.
 ```
-conda create -n <env-name> python>=3.8
+conda create -n <env-name> python>=3.9
 conda activate <env-name>
 ```
 Install breseq-ext-cnv
