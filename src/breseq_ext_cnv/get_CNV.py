@@ -144,7 +144,7 @@ def fit_func(params, x, y, x3):
     c2 = y1 - m2 * (x1)
     
     error = 0
-    for i in range(int(x1)):
+    for i in range(int(x1)-1):
         y1_pred = m1*x[i] + c1
         error += (y_circ[i]-y1_pred) ** 2
     for i in range(int(x1),len(y)):
@@ -164,13 +164,13 @@ def otr_fit(df):
     
     x3_const = len(y_init)     
         
-    xori_guess = df_filt["gc_corr_norm_cov"].iloc[int(x3_const*0.75):int(x3_const*0.95)].idxmax()
-    xter_guess = df_filt["gc_corr_norm_cov"].iloc[int(x3_const*0.20):int(x3_const*0.40)].idxmin()
+    xori_guess = df_filt["gc_corr_norm_cov"].iloc[int(x3_const*0.55):int(x3_const)].idxmax()
+    xter_guess = df_filt["gc_corr_norm_cov"].iloc[int(x3_const*0):int(x3_const*0.50)].idxmin()
     if (x3_const*0.45 <= (xori_guess-xter_guess) <= x3_const*0.55):
         pass
     else:
-        xori_guess = x3_const * 0.95
-        xter_guess = x3_const * 0.10
+        xori_guess = x3_const * 0.999
+        xter_guess = x3_const * 0.001
 
     yori_guess = np.max(y)
     yter_guess = np.min(y) 
@@ -196,7 +196,6 @@ def otr_fit(df):
     y_fit = np.array(list(islice(cycle(y_fit), len(y_fit)-int(xter_opt), 2*len(y_fit)-int(xter_opt))))
     y_corr = y_init / y_fit
     
-    
     return y_corr, y_fit, int(xori_opt), int(xter_opt)
 
 def set_func(params, x, y, x1, x2, x3):
@@ -213,7 +212,7 @@ def set_func(params, x, y, x1, x2, x3):
     c2 = y1 - m2 * (x1)
     
     error = 0
-    for i in range(int(x1)):
+    for i in range(int(x1)-1):
         y1_pred = m1*x[i] + c1
         error += (y_circ[i]-y1_pred) ** 2
     for i in range(int(x1),len(y)):
@@ -232,6 +231,7 @@ def otr_set(df, ter_idx, ori_idx):
     x = df_filt.index
     y = df_filt["gc_corr_norm_cov"]
     
+    # ter_idx, ori_idx  = find_nearest(windows,ter) , find_nearest(windows,ori)
     x3_const = len(y_init)
 
     xori_guess = ori_idx
@@ -271,7 +271,7 @@ def find_nearest(array, value):
 def otr_correction(filepath, ori, ter, enforce):
 
     df = gc_normalization(filepath)
-    windows = df["window_num"]
+    windows = df["win_end"]
     
     corr = []
     # enforces user set genomic co-ordinates of ori/ter to check and fit the bias curve.

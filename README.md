@@ -12,6 +12,11 @@ Install breseq-ext-cnv
 ```
 pip install breseq-ext-cnv
 ```
+or 
+
+```
+pip install git+https://github.com/barricklab/breseq-ext-cnv.git
+```
 **Run:**
 
 Run BAM2COV on *breseq* output to get the coverage table: 
