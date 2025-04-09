@@ -18,12 +18,23 @@ from pathlib import Path
 from scipy.optimize import minimize
 from itertools import cycle, islice
 
-def preprocess(filepath:str, win=200, step=100, frag=350):
+def preprocess(filepath:str, start, end, win=200, step=100, frag=350):
 
     if (step > win) :
         return print(f'window size: {win} is smaller than step size: {step}. Excluding segments of the genome for analysis.')
 
-    df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )
+    # Check if the variable is NoneType
+    if start is None:
+        start = 0
+        if end is None:
+            df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )        
+
+    # Check if the variable is an int
+    else: 
+        df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )
+        df_b2c = df_b2c.iloc[start:end]
+
+    # df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )
     df_b2c["unique_cov"] = df_b2c["unique_top_cov"]+df_b2c["unique_bot_cov"]
     df_b2c["redundant"] = df_b2c['redundant_top_cov']+df_b2c['redundant_bot_cov']
     
@@ -162,7 +173,7 @@ def otr_fit(df):
     xori_guess = y_med_fil.argmax()
     xter_guess = y_med_fil.argmin()
     yori_guess = y[y_med_fil.argmax()]
-    yter_guess = y[y_med_fil.argmin()] 
+    yter_guess = y[y_med_fil.argmin()]
     
     if (abs(xori_guess-xter_guess) > len_init * 0.3 ):
         if (xori_guess < len_init*0.1) or (xori_guess > len_init * 0.9):
@@ -212,6 +223,11 @@ def otr_fit(df):
     
     y1_fit=[]
     y2_fit=[]
+
+    if (yori_opt - yter_opt) >= 2*np.mean(y_med_fil):
+        bias = True
+    else:
+        bias = False
     
     if bias and cyc:
         
@@ -272,8 +288,13 @@ def otr_fit(df):
             y_fit = y1_fit + y2_fit
             
         y_corr = y / y_fit
+
     else:
-        y_corr = np.repeat(np.mean(y), len_init)
+        # y_corr = np.repeat(np.mean(y), len_init)
+        y_corr = y
+        y_fit = np.repeat(np.mean(y), len_init)
+        print("OTR bias not detected")
+        return y_corr, y_fit, xori_guess, xter_guess, bias
 
     
     return y_corr, y_fit, int(xori_opt), int(xter_opt), bias
@@ -346,6 +367,11 @@ def otr_set(df, ter_idx, ori_idx):
     y1_fit=[]
     y2_fit=[]
     
+    if (yori_opt - yter_opt) >= 2*np.mean(y_med_fil):
+        bias = True
+    else:
+        bias = False
+
     if bias and cyc:
         
         if (xori_opt > xter_opt):
@@ -406,7 +432,11 @@ def otr_set(df, ter_idx, ori_idx):
             
         y_corr = y / y_fit
     else:
-        y_corr = np.repeat(np.mean(y), len_init)
+        # y_corr = np.repeat(np.mean(y), len_init)
+        y_corr = y
+        y_fit = np.repeat(np.mean(y), len_init)
+        print("OTR bias not detected")
+        return y_corr, y_fit, xori_guess, xter_guess, bias
 
     return y_corr, y_fit, bias
 
@@ -580,7 +610,7 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, win_st, win_end, ch
 
 
 
-def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
+def run_HMM(sample, region, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
     
     filepath = sample
     saveplt = str(output+"/CNV_plt/")
@@ -588,7 +618,12 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     
-    df, ori_loc, ter_loc = bias_correction(filepath, output, ori, ter, enforce, win, step, frag)
+    if region is not None:
+        start, end = map(int, region.split('-'))
+    else:
+        start, end = None, None
+
+    df, ori_loc, ter_loc = bias_correction(filepath, start, end, output, ori, ter, enforce, win, step, frag)
     
     df["otr_gc_corr_norm_cov"] = np.nan_to_num(df["otr_gc_corr_norm_cov"])
     cor_cov = df["otr_gc_corr_norm_cov"]
@@ -665,14 +700,14 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
     return new_exp, sample, ori_loc, ter_loc
 
 
-def bias_correction(filepath, output, ori, ter, enforce, win, step, frag):
+def bias_correction(filepath, start, end, output, ori, ter, enforce, win, step, frag):
 
     # Function handles the bias correction functions and outputs to be fed into the HMM
     sample = filepath.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     saveplt = str(output+"/OTR_corr/")
     print(f'{sample}: Calculating coverage and GC% across sliding window over the genome.')
-    df = preprocess(filepath, win, step, frag)
+    df = preprocess(filepath, start, end, win, step, frag)
     gc_corr = gc_normalization(df)
     print(f'{sample}: Corrected GC bias in coverage.')
     otr_corr, otr_res, ori_win, ter_win = otr_correction(gc_corr, ori, ter, enforce)
@@ -750,27 +785,42 @@ def plot_copy(df_cnv, sample, output):
 
     fig, ax1 = plt.subplots()
 
+    # fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
     ax2 = ax1.twinx()
+    ax1.patch.set_visible(False)
 
-    ax1.scatter(df_cnv["win_st"],df_cnv["read_count_cov"], color="gray", label="Raw reads",s=10)
-    ax1.scatter(df_cnv["win_st"],df_cnv["otr_gc_corr_rdcnt_cov"], color="orange", label="Corrected reads",s=5, alpha = 0.5,
-                marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
-    ax2.scatter(df_cnv["win_st"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", s=3)
+    ax1.set_zorder(2)  # Higher than ax2
+    ax2.set_zorder(1)  # Lower than ax1
+
     
+    ax2.scatter(df_cnv["win_st"],df_cnv["read_count_cov"], color="gray", label="Raw reads",s=10, alpha = 0.2)
+    ax2.scatter(df_cnv["win_st"],df_cnv["otr_gc_corr_rdcnt_cov"], color="orange", label="Corrected reads",s=5, alpha = 0.5,
+                marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
+    ax1.scatter(df_cnv["win_st"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", marker="_", s = 30)
+
     delta = (df_cnv['read_count_cov'].median()*0.5)
     
     
-    ax1.set_ylim(df_cnv['read_count_cov'].min() - delta, df_cnv['read_count_cov'].max() + delta)
-    ax2.set_ylim(df_cnv['otr_gc_corr_norm_cov'].min() - 0.5, df_cnv['otr_gc_corr_norm_cov'].max() + 0.5)
+    ax2.set_ylim(df_cnv['read_count_cov'].min() - delta, df_cnv['read_count_cov'].max() + delta)
+    ax1.set_ylim(df_cnv['otr_gc_corr_norm_cov'].min() - 0.5, df_cnv['otr_gc_corr_norm_cov'].max() + 0.5)
     
     ax1.set_xlabel("Window (Genomic position)")
-    ax2.yaxis.label.set_color('red')
-    ax1.set_ylabel("Read Counts")
-    ax2.set_ylabel("Copy Numbers")
+    ax1.yaxis.label.set_color('red')
+    ax2.set_ylabel("Read Counts")
+    ax1.set_ylabel("Copy Numbers")
     plt.title(f'{samplename}_Copy Number Prediction')
     
-    ax1.legend(loc = 'best')
-    # ax2.legend()
+    handles_ax1, labels_ax1 = ax1.get_legend_handles_labels()
+    handles_ax2, labels_ax2 = ax2.get_legend_handles_labels()
+
+    # Combine handles and labels
+    handles = handles_ax1 + handles_ax2
+    labels = labels_ax1 + labels_ax2
+
+    # Create a combined legend on one of the axes (or the figure)
+    ax1.legend(handles, labels, loc='best')  # Place on ax1
+    # Alternatively, place it on ax2:
+    # ax2.legend(handles, labels, loc='best')
     
     plt_full_path = os.path.join(saveplt,'%s_copy_numbers.pdf' % samplename)
     plt.savefig(plt_full_path, format = 'pdf', bbox_inches = 'tight')
@@ -801,6 +851,15 @@ def main():
         help="input .tab file address from breseq bam2cov.",
     )
     
+    parser.add_argument(
+        "--region",
+        action="store",
+        dest="reg",
+        required=False,
+        type=str,
+        help="select the region of the genome to evaluate",
+    )
+
     parser.add_argument(
         "-o",
         "--output",
@@ -891,6 +950,7 @@ def main():
         print("Ter has been set (value is %s)" % options.ter)
         cnv,smpl, ori_win, ter_win = run_HMM(
             sample=options.i,
+            region=options.reg,
             output = options.o,
             ori=options.ori,
             ter=options.ter,
@@ -907,6 +967,7 @@ def main():
         print("Ter has not been set (default value is %s)" % options.ter)
         cnv,smpl, ori_win, ter_win = run_HMM(
             sample=options.i,
+            region=options.reg,
             output = options.o,
             ori=options.ori,
             ter=options.ter,
