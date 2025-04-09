@@ -27,6 +27,8 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
     df_b2c["unique_cov"] = df_b2c["unique_top_cov"]+df_b2c["unique_bot_cov"]
     df_b2c["redundant"] = df_b2c['redundant_top_cov']+df_b2c['redundant_bot_cov']
     
+    #start_coord = df_b2c["position"].iloc[0]
+    start_coord = int(df_b2c.index[0])
     med_gen_cov = df_b2c["unique_cov"].median()
     cov = df_b2c["unique_cov"]
     genome = df_b2c['ref_base']
@@ -83,7 +85,7 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
             lst_win = win_end[(len(win_end)-1)]
             i_off = i+int(genome_len*0.25)
             
-            if (frag>win):
+            if (frag > win):
                 diff = int((frag-win)/2)
                 fragseq = genome_cyc[(i_off-diff):((i_off + win)+diff)]
                 fragment.insert(i,str(''.join(str(element) for element in fragseq)))
@@ -101,9 +103,10 @@ def preprocess(filepath:str, win=200, step=100, frag=350):
             i = i + step
 
     #Save the window median and GC% per fragment overlapping a window to the dataframe
-
-    df_gc["win_st"] = window
-    df_gc["win_end"] = win_end
+    # window += start_coord
+    # win_end += start_coord
+    df_gc["win_st"] = [x + start_coord for x in window]
+    df_gc["win_end"] = [x + start_coord for x in win_end]
     df_gc["win_len"] = df_gc["win_end"] - df_gc["win_st"]
     df_gc["gc_percent"] = gcp_s
     df_gc["read_count_cov"] = window_med_cov
@@ -563,7 +566,7 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, win_st, win_end, ch
         most_probable_state_name = states[most_probable_state]  # Adjust for 0-based indexing
         
         if most_probable_state_name != prev_most_probable_state_name:
-            results = results._append({'Startpos': start_pos, 'Endpos': win_end[i-1], 
+            results = results._append({'Startpos': start_pos,'Endpos': win_end[i-1], 
                                       'State': prev_most_probable_state_name}, ignore_index=True)
             start_pos = win_st[i]
         
@@ -580,6 +583,8 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, win_st, win_end, ch
 def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
     
     filepath = sample
+    saveplt = str(output+"/CNV_plt/")
+    saveloc = str(output+"/CNV_csv/")
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     
@@ -595,7 +600,7 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
         # cor_rc.insert(i, int(np.nan_to_num(df["otr_gc_corr_norm_cov"].iloc[i]) * med))
         cor_rc.insert(i, int(df["otr_gc_corr_norm_cov"].iloc[i] * med))
     
-    df['win_len'] = df["win_end"] - df["win_st"]
+    # df['win_len'] = df["win_end"] - df["win_st"]
     
     mean = np.median(cor_rc)
     var = np.var(cor_rc)
@@ -616,6 +621,12 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
     # outputs consequtive segments of the genome where copy number changes based on HMM : Break points
     copy_numbers = HMM_copy_number(cor_rc, this_transition, this_emission, df["win_st"], df["win_end"], df['win_end'].max())
     
+    brk_full_path = os.path.join(saveloc,'%s_break_pts.csv' % samplename)
+    cn_brk = pd.DataFrame(copy_numbers,columns=['Startpos','Endpos', 'State'])
+    cn_brk['Segment_Size'] = cn_brk['Endpos'] - cn_brk['Startpos']
+    cn_brk.drop(columns='Endpos', inplace = True)
+    cn_brk.to_csv(brk_full_path, index = False)
+    
     CN_HMM = []
     # output copy number prediction for each instance of genomic sliding window
     for cnrow in range(len(copy_numbers)):
@@ -626,19 +637,18 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
         hmmend = int(copy_numbers['Endpos'][cnrow])
         
         CN_HMM_row = []
-        idx_list = df[df["win_st"] == hmmstart].index
+        # Index lists of windows between the breakpoints
+        idx_list = df[(hmmstart <= df["win_st"]) & (df["win_st"] <= hmmend)].index
+
 
         if len(idx_list) == 0:
             continue  # skip if no matching start position found
     
-        idx = idx_list[0]
-        
-        for idx in range(len(new_exp)):
+        #Iterate over the select windows and append the copy number (state) to the window
+        for idx in (idx_list):
 
             if ((df["win_st"].iloc[idx] >= hmmstart) and (df["win_end"].iloc[idx] <= hmmend)):
                 CN_HMM_row.append(state)
-                idx+=1
-
             else:
                 continue
         
@@ -646,19 +656,10 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
     
     new_exp['prob_copy_number'] = CN_HMM
 
-    
-    saveplt = str(output+"/CNV_plt/")
-    saveloc = str(output+"/CNV_csv/")
-
     csv_full_path = os.path.join(saveloc,'%s_CNV.csv' % samplename)
-    brk_full_path = os.path.join(saveloc,'%s_break_pts.csv' % samplename)
 
     new_exp.reset_index(drop = True)
     new_exp.to_csv(csv_full_path, index = False)
-    cn_brk = pd.DataFrame(copy_numbers,columns=['Startpos','Endpos', 'State'])
-    cn_brk['Segment_Size'] = cn_brk['Endpos'] - cn_brk['Startpos']
-    cn_brk.drop(columns='Endpos', inplace = True)
-    cn_brk.to_csv(brk_full_path, index = False)
 
     print(f"{sample}: Copy number prediction complete. .csv files saved.")
     return new_exp, sample, ori_loc, ter_loc
@@ -768,7 +769,7 @@ def plot_copy(df_cnv, sample, output):
     ax2.set_ylabel("Copy Numbers")
     plt.title(f'{samplename}_Copy Number Prediction')
     
-    ax1.legend(loc = 'upper right')
+    ax1.legend(loc = 'best')
     # ax2.legend()
     
     plt_full_path = os.path.join(saveplt,'%s_copy_numbers.pdf' % samplename)
@@ -817,7 +818,7 @@ def main():
         action="store",
         dest="w",
         required=False,
-        # default = 1000,
+        default = 200,
         type=int,
         help="Define window length to parse through the genome and calculate coverage and GC statistics.",
     )
@@ -828,7 +829,7 @@ def main():
         action="store",
         dest="s",
         required=False,
-        # default = 500,
+        default = 100,
         type=int,
         help="Define step size (<= window size) for each progression of the window across the genome sequence. Set = window size if non-overlapping windows.",
     )
