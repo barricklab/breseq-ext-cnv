@@ -18,27 +18,15 @@ from pathlib import Path
 from scipy.optimize import minimize
 from itertools import cycle, islice
 
-def preprocess(filepath:str, start, end, win=200, step=100, frag=350):
+def preprocess(filepath:str, win=200, step=100, frag=350):
 
     if (step > win) :
         return print(f'window size: {win} is smaller than step size: {step}. Excluding segments of the genome for analysis.')
 
-    # Check if the variable is NoneType
-    if start is None:
-        start = 0
-        if end is None:
-            df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )        
-
-    # Check if the variable is an int
-    else: 
-        df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )
-        df_b2c = df_b2c.iloc[start:end]
-
-    # df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )
+    df_b2c = pd.read_csv(filepath ,delimiter = '\t',engine='python', header = 0, index_col = 0, skipfooter = 4 )
     df_b2c["unique_cov"] = df_b2c["unique_top_cov"]+df_b2c["unique_bot_cov"]
     df_b2c["redundant"] = df_b2c['redundant_top_cov']+df_b2c['redundant_bot_cov']
     
-    #start_coord = df_b2c["position"].iloc[0]
     start_coord = int(df_b2c.index[0])
     med_gen_cov = df_b2c["unique_cov"].median()
     cov = df_b2c["unique_cov"]
@@ -610,7 +598,7 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, win_st, win_end, ch
 
 
 
-def run_HMM(sample, region, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
+def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
     
     filepath = sample
     saveplt = str(output+"/CNV_plt/")
@@ -618,12 +606,7 @@ def run_HMM(sample, region, output, ori, ter, enforce, win, step, frag, error_ra
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     
-    if region is not None:
-        start, end = map(int, region.split('-'))
-    else:
-        start, end = None, None
-
-    df, ori_loc, ter_loc = bias_correction(filepath, start, end, output, ori, ter, enforce, win, step, frag)
+    df, ori_loc, ter_loc = bias_correction(filepath, output, ori, ter, enforce, win, step, frag)
     
     df["otr_gc_corr_norm_cov"] = np.nan_to_num(df["otr_gc_corr_norm_cov"])
     cor_cov = df["otr_gc_corr_norm_cov"]
@@ -700,21 +683,20 @@ def run_HMM(sample, region, output, ori, ter, enforce, win, step, frag, error_ra
     return new_exp, sample, ori_loc, ter_loc
 
 
-def bias_correction(filepath, start, end, output, ori, ter, enforce, win, step, frag):
+def bias_correction(filepath, output, ori, ter, enforce, win, step, frag):
 
     # Function handles the bias correction functions and outputs to be fed into the HMM
     sample = filepath.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     saveplt = str(output+"/OTR_corr/")
     print(f'{sample}: Calculating coverage and GC% across sliding window over the genome.')
-    df = preprocess(filepath, start, end, win, step, frag)
+    df = preprocess(filepath, win, step, frag)
     gc_corr = gc_normalization(df)
     print(f'{sample}: Corrected GC bias in coverage.')
     otr_corr, otr_res, ori_win, ter_win = otr_correction(gc_corr, ori, ter, enforce)
     with open(saveplt+str(samplename)+'_otr_results.json', 'w') as f:
         json.dump(otr_res, f, indent = 4)
     print(f'{sample}: Corrected origin/terminus of replication(OTR) bias in coverage.')
-    # otr_corr.to_csv("../../MGD17-LB-E06_ADP1.csv")
     return otr_corr, ori_win, ter_win
 
 
@@ -775,12 +757,26 @@ def plot_otr_corr(df, sample, output, ori, ter):
     plt.close()
 
 
-def plot_copy(df_cnv, sample, output):
+def plot_copy(df_cnv, pltstart, pltend, sample, output):
     
     sample = sample.strip().split('/')[-1]
     samplename = sample.strip().split('.')[0]
     saveplt = str(output+"/CNV_plt/")
     
+    win_st = df_cnv["win_st"]
+    win_end = df_cnv["win_end"]
+
+    # Check if the region of the genome to plot is defined:
+
+    if pltstart == 0 and pltend == 0:
+        df_plt = df_cnv
+    elif pltstart ==0 and pltend > 0:
+        endidx = find_nearest(win_end, pltend)
+        df_plt = df_cnv.iloc[:endidx]
+    else:
+        stidx =find_nearest(win_st,pltstart)
+        df_plt = df_cnv.iloc[stidx:]
+
     plt.figure(figsize=(10, 8))
 
     fig, ax1 = plt.subplots()
@@ -793,16 +789,16 @@ def plot_copy(df_cnv, sample, output):
     ax2.set_zorder(1)  # Lower than ax1
 
     
-    ax2.scatter(df_cnv["win_st"],df_cnv["read_count_cov"], color="gray", label="Raw reads",s=10, alpha = 0.2)
-    ax2.scatter(df_cnv["win_st"],df_cnv["otr_gc_corr_rdcnt_cov"], color="orange", label="Corrected reads",s=5, alpha = 0.5,
+    ax2.scatter(df_plt["win_st"],df_plt["read_count_cov"], color="gray", label="Raw reads",s=10, alpha = 0.2)
+    ax2.scatter(df_plt["win_st"],df_plt["otr_gc_corr_rdcnt_cov"], color="orange", label="Corrected reads",s=5, alpha = 0.5,
                 marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
-    ax1.scatter(df_cnv["win_st"],df_cnv["prob_copy_number"], color="red", label="Predicted Copy Number", marker="_", s = 30)
+    ax1.scatter(df_plt["win_st"],df_plt["prob_copy_number"], color="red", label="Predicted Copy Number", marker="_", s = 30)
 
-    delta = (df_cnv['read_count_cov'].median()*0.5)
+    delta = (df_plt['read_count_cov'].median()*0.5)
     
     
-    ax2.set_ylim(df_cnv['read_count_cov'].min() - delta, df_cnv['read_count_cov'].max() + delta)
-    ax1.set_ylim(df_cnv['otr_gc_corr_norm_cov'].min() - 0.5, df_cnv['otr_gc_corr_norm_cov'].max() + 0.5)
+    ax2.set_ylim(df_plt['read_count_cov'].min() - delta, df_plt['read_count_cov'].max() + delta)
+    ax1.set_ylim(df_plt['otr_gc_corr_norm_cov'].min() - 0.5, df_plt['otr_gc_corr_norm_cov'].max() + 0.5)
     
     ax1.set_xlabel("Window (Genomic position)")
     ax1.yaxis.label.set_color('red')
@@ -943,6 +939,23 @@ def main():
     for i in range(len(out_subdirs)):
         Path(out_dir+out_subdirs[i]).mkdir(parents=True, exist_ok=True)
 
+    region = options.reg
+
+    if region is not None:
+        parts = region.split('-')
+        if len(parts) == 2 :
+            if parts[0] == '':
+                pltend = int(parts[1])
+                pltstart = 0
+            elif parts[1] == '':
+                pltstart = int(parts[0])
+                pltend = 0
+            else:
+                pltstart, pltend = int(parts[0]), int(parts[1])
+        else:
+            return "Invalid region. Ensure the region is specified by int values of 2 genomic coordinates separated by a '-'."
+    else:
+        pltstart, pltend = 0, 0
 
     # Call the copy number (HMM) function with the provided options
     if options.ori and options.ter is not None:
@@ -950,7 +963,6 @@ def main():
         print("Ter has been set (value is %s)" % options.ter)
         cnv,smpl, ori_win, ter_win = run_HMM(
             sample=options.i,
-            region=options.reg,
             output = options.o,
             ori=options.ori,
             ter=options.ter,
@@ -967,7 +979,6 @@ def main():
         print("Ter has not been set (default value is %s)" % options.ter)
         cnv,smpl, ori_win, ter_win = run_HMM(
             sample=options.i,
-            region=options.reg,
             output = options.o,
             ori=options.ori,
             ter=options.ter,
@@ -983,7 +994,7 @@ def main():
     print(f'{smpl}: GC bias vs coverage plots saved.')
     plot_otr_corr(cnv, sample=options.i, output=options.o, ori=ori_win, ter=ter_win)
     print(f'{smpl}: OTR bias vs coverage plots saved.')
-    plot_copy(cnv, sample=options.i, output=options.o)
+    plot_copy(cnv, pltstart, pltend, sample=options.i, output=options.o)
     print(f'{smpl}: CNV prediction plots saved.')
 
 
