@@ -770,12 +770,16 @@ def plot_copy(df_cnv, pltstart, pltend, sample, output):
 
     if pltstart == 0 and pltend == 0:
         df_plt = df_cnv
-    elif pltstart ==0 and pltend > 0:
+    elif pltstart == 0 and pltend > 0:
         endidx = find_nearest(win_end, pltend)
         df_plt = df_cnv.iloc[:endidx]
+    elif pltend == 0 and pltstart > 0:
+        stidx = find_nearest(win_st, pltstart)
+        df_plt = df_cnv.iloc[stidx:]
     else:
         stidx =find_nearest(win_st,pltstart)
-        df_plt = df_cnv.iloc[stidx:]
+        endidx = find_nearest(win_end, pltend)
+        df_plt = df_cnv.iloc[stidx:endidx]
 
     plt.figure(figsize=(10, 8))
 
