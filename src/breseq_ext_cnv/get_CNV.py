@@ -17,6 +17,7 @@ import seaborn as sns
 from pathlib import Path
 from scipy.optimize import minimize
 from itertools import cycle, islice
+import matplotlib.ticker as ticker
 
 def preprocess(filepath:str, win=200, step=100, frag=350):
 
@@ -144,149 +145,6 @@ def fit_func(params, x, y):
         error += (y[i]-y_pred) ** 2
     return error
 
-def otr_fit(df):
-    
-    cyc = False
-    bias = False
-    pt = "trough"
-    x = df.index
-    y = df["gc_corr_norm_cov"]
-    y_med_fil = df["gc_cor_med_fil"]
-    
-    len_init = len(x)
-    
-    x_cyc = list(islice(cycle(x), 0, len_init*3))
-    y_cyc = list(islice(cycle(y), 0, len_init*3))
-    
-    xori_guess = y_med_fil.argmax()
-    xter_guess = y_med_fil.argmin()
-    yori_guess = y[y_med_fil.argmax()]
-    yter_guess = y[y_med_fil.argmin()]
-    
-    if (abs(xori_guess-xter_guess) > len_init * 0.3 ):
-        if (xori_guess < len_init*0.1) or (xori_guess > len_init * 0.9):
-            xori_guess = 0
-            y1 = y_cyc[:xter_guess]
-            y2 = y_cyc[xter_guess:len_init]
-            x1 = x_cyc[:xter_guess]
-            x2 = x_cyc[xter_guess:len_init]
-            initial_guess1 = [xori_guess, xter_guess, yori_guess, yter_guess]
-            initial_guess2 = [xter_guess, xori_guess, yter_guess, yori_guess]
-        elif (xter_guess < len_init*0.1) or (xter_guess > len_init * 0.9):
-            xter_guess = 0
-            y1 = y_cyc[:xori_guess]
-            y2 = y_cyc[xori_guess:len_init]
-            x1 = x_cyc[:xori_guess]
-            x2 = x_cyc[xori_guess:len_init]
-            initial_guess1 = [xori_guess, xter_guess, yori_guess, yter_guess]
-            initial_guess2 = [len_init, xori_guess, yter_guess, yori_guess]
-            pt = "peak"
-        else:
-            xi = xori_guess if (xori_guess < xter_guess) else xter_guess
-            xj = xori_guess if (xori_guess > xter_guess) else xter_guess
-            y1 = y_cyc[xi:xj]
-            y2 = y_cyc[xj:(xi+len_init)]
-            x1 = x_cyc[xi:xj]
-            x2 = x_cyc[xj:(xi+len_init)]
-            initial_guess1 = [xori_guess, xter_guess, yori_guess, yter_guess]
-            initial_guess2 = [xter_guess, len_init, yter_guess, yori_guess]
-            cyc = True
-        bias = True
-    else:
-        y_corr = y
-        y_fit = np.repeat(np.mean(y), len_init)
-        print("OTR bias not detected")
-        return y_corr, y_fit, xori_guess, xter_guess, bias
-    
-    result1 = minimize(fit_func, initial_guess1, args = (x1, y1))
-    result2 = minimize(fit_func, initial_guess2, args = (x2, y2))
-    
-    xori_opt1, xter_opt1, yori_opt1, yter_opt1 = result1.x
-    xter_opt2, xori_opt2, yter_opt2, yori_opt2 = result2.x
-    
-    xori_opt = np.mean([xori_opt1, xori_opt2])
-    xter_opt = np.mean([xter_opt1, xter_opt2])
-    yori_opt = np.mean([yori_opt1, yori_opt2])
-    yter_opt = np.mean([yter_opt1, yter_opt2])
-    
-    y1_fit=[]
-    y2_fit=[]
-
-    if (yori_opt - yter_opt) >= 2*np.mean(y_med_fil):
-        bias = True
-    else:
-        bias = False
-    
-    if bias and cyc:
-        
-        if (xori_opt > xter_opt):
-            m_opt = (yori_opt - yter_opt) / (xori_opt - xter_opt)
-            c_opt = yori_opt - m_opt * (xori_opt - xter_opt)
-            m_opt1 = (yori_opt-yter_opt) / (xori_guess-xter_guess)
-            m_opt2 = (yter_opt-yori_opt) / (len(x)-(xori_guess-xter_guess))
-            
-            c_opt1 = yori_opt - m_opt * (xori_opt-xter_opt)
-            c_opt2 = yter_opt - m_opt * (xter_opt-xori_opt)
-            
-            y1_fit = [m_opt1 * x + c_opt1 for x in range(len(x1))]
-            y2_fit = [m_opt2 * x + c_opt2 for x in range(len(x2))]
-            y_fit = y1_fit + y2_fit
-            y_fit = np.array(list(islice(cycle(y_fit), len(y_fit)-int(xter_guess), (2*len(y_fit) - int(xter_guess)))))
-        else:
-            m_opt = (yori_opt - yter_opt) / (xori_opt - xter_opt)
-            c_opt = yori_opt - m_opt * (xori_opt - xter_opt)
-            m_opt1 = (yori_opt-yter_opt) / (xori_guess-xter_guess)
-            m_opt2 = (yter_opt-yori_opt) / (len(x)-(xori_guess-xter_guess))
-            
-            c_opt1 = yori_opt - m_opt * (xori_opt-xter_opt)
-            c_opt2 = yter_opt - m_opt * (xter_opt-xori_opt)
-            
-            y1_fit = [m_opt1 * x + c_opt1 for x in range(len(x1))]
-            y2_fit = [m_opt2 * x + c_opt2 for x in range(len(x2))]
-            y_fit = y1_fit + y2_fit
-            y_fit = np.array(list(islice(cycle(y_fit), len(y_fit)-int(xori_guess), (2*len(y_fit) - int(xori_guess)))))
-        y_corr = y / y_fit
-        
-    elif bias and not cyc:
-        if pt == "peak":
-            xter_opt = 0
-            
-            m_opt1 = (yori_opt1 - yter_opt1) / (xori_opt1 - xter_opt1)
-            m_opt2 = (yter_opt2 - yori_opt2) / (xter_opt2 - xori_opt2)
-
-            c_opt1 = yori_opt2 - m_opt1 * (int(xori_opt1))
-            c_opt2 = yori_opt2 - m_opt2 * (int(xori_opt2))
-            
-            y1_fit = [m_opt1 * x + c_opt1 for x in x1]
-            y2_fit = [m_opt2 * x + c_opt2 for x in x2]
-            y_fit = y1_fit + y2_fit
-            
-        else:
-            xori_opt = 0
-            
-            m_opt1 = (yori_opt1 - yter_opt1) / (xori_opt1 - xter_opt1)
-            m_opt2 = (yter_opt2 - yori_opt2) / (xter_opt2 - xori_opt2)
-            
-            c_opt1 = yter_opt1 - m_opt1 * (int(xter_opt1))
-            c_opt2 = yter_opt1 - m_opt2 * (int(xter_opt2))
-            
-            y1_fit = [m_opt1 * x + c_opt1 for x in x1]
-            y2_fit = [m_opt2 * x + c_opt2 for x in x2]
-            
-            y_fit = y1_fit + y2_fit
-            
-        y_corr = y / y_fit
-
-    else:
-        # y_corr = np.repeat(np.mean(y), len_init)
-        y_corr = y
-        y_fit = np.repeat(np.mean(y), len_init)
-        print("OTR bias not detected")
-        return y_corr, y_fit, xori_guess, xter_guess, bias
-
-    
-    return y_corr, y_fit, int(xori_opt), int(xter_opt), bias
-
 def otr_set(df, ter_idx, ori_idx):
     
     cyc = False
@@ -338,7 +196,7 @@ def otr_set(df, ter_idx, ori_idx):
     else:
         y_corr = y
         y_fit = np.repeat(np.mean(y), len_init)
-        print("OTR bias not detected")
+        print("Specified ori and ter too close to each other. No correction applied.")
         return y_corr, y_fit, bias
     
     result1 = minimize(fit_func, initial_guess1, args = (x1, y1))
@@ -355,11 +213,168 @@ def otr_set(df, ter_idx, ori_idx):
     y1_fit=[]
     y2_fit=[]
     
-    if (yori_opt - yter_opt) >= 2*np.mean(y_med_fil):
+    if (yori_opt / yter_opt) > 1:
         bias = True
     else:
         bias = False
 
+    if bias and cyc:
+        
+        if (xori_opt > xter_opt):
+            m_opt = (yori_opt - yter_opt) / (xori_opt - xter_opt)
+            c_opt = yori_opt - m_opt * (xori_opt - xter_opt)
+            m_opt1 = (yori_opt-yter_opt) / (xori_guess-xter_guess)
+            m_opt2 = (yter_opt-yori_opt) / (len(x)-(xori_guess-xter_guess))
+            
+            c_opt1 = yori_opt - m_opt * (xori_opt-xter_opt)
+            c_opt2 = yter_opt - m_opt * (xter_opt-xori_opt)
+            
+            y1_fit = [m_opt1 * x + c_opt1 for x in range(len(x1))]
+            y2_fit = [m_opt2 * x + c_opt2 for x in range(len(x2))]
+            y_fit = y1_fit + y2_fit
+            y_fit = np.array(list(islice(cycle(y_fit), len(y_fit)-int(xter_guess), (2*len(y_fit) - int(xter_guess)))))
+        else:
+            m_opt = (yori_opt - yter_opt) / (xori_opt - xter_opt)
+            c_opt = yori_opt - m_opt * (xori_opt - xter_opt)
+            m_opt1 = (yori_opt-yter_opt) / (xori_guess-xter_guess)
+            m_opt2 = (yter_opt-yori_opt) / (len(x)-(xori_guess-xter_guess))
+            
+            c_opt1 = yori_opt - m_opt * (xori_opt-xter_opt)
+            c_opt2 = yter_opt - m_opt * (xter_opt-xori_opt)
+            
+            y1_fit = [m_opt1 * x + c_opt1 for x in range(len(x1))]
+            y2_fit = [m_opt2 * x + c_opt2 for x in range(len(x2))]
+            y_fit = y1_fit + y2_fit
+            y_fit = np.array(list(islice(cycle(y_fit), len(y_fit)-int(xori_guess), (2*len(y_fit) - int(xori_guess)))))
+        y_corr = y / y_fit
+        
+    elif bias and not cyc:
+        if pt == "peak":
+            xter_opt = 0
+            
+            m_opt1 = (yori_opt1 - yter_opt1) / (xori_opt1 - xter_opt1)
+            m_opt2 = (yter_opt2 - yori_opt2) / (xter_opt2 - xori_opt2)
+
+            c_opt1 = yori_opt2 - m_opt1 * (int(xori_opt1))
+            c_opt2 = yori_opt2 - m_opt2 * (int(xori_opt2))
+            
+            y1_fit = [m_opt1 * x + c_opt1 for x in x1]
+            y2_fit = [m_opt2 * x + c_opt2 for x in x2]
+            y_fit = y1_fit + y2_fit
+            
+        else:
+            xori_opt = 0
+            
+            m_opt1 = (yori_opt1 - yter_opt1) / (xori_opt1 - xter_opt1)
+            m_opt2 = (yter_opt2 - yori_opt2) / (xter_opt2 - xori_opt2)
+            
+            c_opt1 = yter_opt1 - m_opt1 * (int(xter_opt1))
+            c_opt2 = yter_opt1 - m_opt2 * (int(xori_opt2))
+            
+            y1_fit = [m_opt1 * x + c_opt1 for x in x1]
+            y2_fit = [m_opt2 * x + c_opt2 for x in x2]
+            
+            y_fit = y1_fit + y2_fit
+            
+        y_corr = y / y_fit
+    else:
+        # y_corr = np.repeat(np.mean(y), len_init)
+        y_corr = y
+        y_fit = np.repeat(np.mean(y), len_init)
+        print("OTR bias not detected")
+        return y_corr, y_fit, xori_guess, xter_guess, bias
+
+    return y_corr, y_fit, bias
+
+def otr_fit(df):
+    
+    cyc = False
+    bias = False
+    pt = "trough"
+    x = df.index
+    y = df["gc_corr_norm_cov"]
+    y_med_fil = df["gc_cor_med_fil"]
+    
+    len_init = len(x)
+    
+    x_cyc = list(islice(cycle(x), 0, len_init*3))
+    y_cyc = list(islice(cycle(y), 0, len_init*3))
+    
+    xori_guess = y_med_fil.argmax()
+    xter_guess = y_med_fil.argmin()
+    yori_guess = y[y_med_fil.argmax()]
+    yter_guess = y[y_med_fil.argmin()]
+
+    print(f'xori_guess:{xori_guess} and xter_guess: {xter_guess}')
+
+
+    if (abs((xori_guess - xter_guess)) >= (len_init * 0.3)):
+
+        bias = True
+        
+        if (xori_guess < len_init * 0.1) or (xori_guess > len_init * 0.9):
+            xori_guess = 0
+            y1 = y_cyc[:xter_guess]
+            y2 = y_cyc[xter_guess:len_init]
+            x1 = x_cyc[:xter_guess]
+            x2 = x_cyc[xter_guess:len_init]
+            initial_guess1 = [xori_guess, xter_guess, yori_guess, yter_guess]
+            initial_guess2 = [xter_guess, xori_guess, yter_guess, yori_guess]
+
+        elif (xter_guess < len_init*0.1) or (xter_guess > len_init * 0.9):
+            xter_guess = 0
+            y1 = y_cyc[:xori_guess]
+            y2 = y_cyc[xori_guess:len_init]
+            x1 = x_cyc[:xori_guess]
+            x2 = x_cyc[xori_guess:len_init]
+            initial_guess1 = [xori_guess, xter_guess, yori_guess, yter_guess]
+            initial_guess2 = [len_init, xori_guess, yter_guess, yori_guess]
+            pt = "peak"
+        
+        else:
+            xi = xori_guess if (xori_guess < xter_guess) else xter_guess
+            xj = xori_guess if (xori_guess > xter_guess) else xter_guess
+            y1 = y_cyc[xi:xj]
+            y2 = y_cyc[xj:(xi+len_init)]
+            x1 = x_cyc[xi:xj]
+            x2 = x_cyc[xj:(xi+len_init)]
+            initial_guess1 = [xori_guess, xter_guess, yori_guess, yter_guess]
+            initial_guess2 = [xter_guess, len_init, yter_guess, yori_guess]
+            cyc = True
+
+    else:
+        y_corr = y
+        y_fit = np.repeat(np.mean(y), len_init)
+        print("OTR bias not detected")
+
+        return y_corr, y_fit, xori_guess, xter_guess, bias
+    
+    result1 = minimize(fit_func, initial_guess1, args = (x1, y1))
+    result2 = minimize(fit_func, initial_guess2, args = (x2, y2))
+    
+    xori_opt1, xter_opt1, yori_opt1, yter_opt1 = result1.x
+    xter_opt2, xori_opt2, yter_opt2, yori_opt2 = result2.x
+    
+    xori_opt = np.mean([xori_opt1, xori_opt2])
+    xter_opt = np.mean([xter_opt1, xter_opt2])
+    yori_opt = np.mean([yori_opt1, yori_opt2])
+    yter_opt = np.mean([yter_opt1, yter_opt2])
+    
+    print(f'guess1:{initial_guess1}, guess2:{initial_guess2}')
+    # print(f'xori_opt1:{xori_opt1} and xter_opt1: {xter_opt1}')
+    print(f'yori_opt1:{yori_opt1} and yter_opt1: {yter_opt1}')
+    # print(f'xori_opt2:{xori_opt2} and xter_opt2: {xter_opt2}')
+    print(f'yori_opt2:{yori_opt2} and yter_opt2: {yter_opt2}')
+
+
+    y1_fit=[]
+    y2_fit=[]
+
+    if (yori_opt / yter_opt) > 1:
+        bias = True
+    else:
+        bias = False
+    
     if bias and cyc:
         
         if (xori_opt > xter_opt):
@@ -417,8 +432,12 @@ def otr_set(df, ter_idx, ori_idx):
             y2_fit = [m_opt2 * x + c_opt2 for x in x2]
             
             y_fit = y1_fit + y2_fit
-            
+            print(f'm_opt1:{m_opt1} and m_opt2:{m_opt2}')
+            print(f'c_opt1:{c_opt1} and c_opt2:{c_opt2}')
+
+
         y_corr = y / y_fit
+
     else:
         # y_corr = np.repeat(np.mean(y), len_init)
         y_corr = y
@@ -426,7 +445,9 @@ def otr_set(df, ter_idx, ori_idx):
         print("OTR bias not detected")
         return y_corr, y_fit, xori_guess, xter_guess, bias
 
-    return y_corr, y_fit, bias
+    
+    return y_corr, y_fit, int(xori_opt), int(xter_opt), bias
+
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -549,7 +570,7 @@ def make_viterbi_mat(obs, transition_matrix, emission_matrix):
     
     logv[0,:] = -np.inf
     
-    #start prob of state =1 when including zero state
+    #start prob of state = 1 when including zero state
 
     logv[0, 1] = np.log(1e-100)
     
@@ -620,7 +641,7 @@ def run_HMM(sample, output, ori, ter, enforce, win, step, frag, error_rate=0.15,
     
     # df['win_len'] = df["win_end"] - df["win_st"]
     
-    mean = np.median(cor_rc)
+    mean = np.mean(cor_rc)
     var = np.var(cor_rc)
     
     
@@ -736,11 +757,12 @@ def plot_otr_corr(df, sample, output, ori, ter):
   
 
     plt.figure(figsize=(10, 8))
-    plt.scatter(df["win_st"],df["norm_raw_cov"], color="gray", label="Raw reads",s=8, alpha = 0.3)
-    plt.scatter(df["win_st"],df["gc_corr_norm_cov"], color="brown", label="GC corrected", marker = '*', s=15, alpha = 0.5)
-    plt.scatter(df["win_st"],df["otr_gc_corr_norm_cov"], color = 'black', label="Ori/Ter bias corrected", s = 20, alpha = 0.1, 
-                marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
+    plt.scatter(df["win_st"],df["norm_raw_cov"], color="gray", label="Raw reads",s=8, alpha = 0.2)
+    plt.scatter(df["win_st"],df["gc_corr_norm_cov"], color="gray", label="GC corrected", marker = '*', s=15, alpha = 0.5)
+    plt.scatter(df["win_st"],df["otr_gc_corr_norm_cov"], color = 'orange', label="Ori/Ter bias corrected", s = 20, alpha = 0.85, 
+                marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'full'))
     plt.plot(df["win_st"], df["otr_gc_corr_fact"], color = "white", label = "OTR-bias-fit-line")
+    plt.plot(df["win_st"],df["gc_cor_med_fil"], color="blue", label="Med-fil")
     
     plt.axvline(x=ter, color='r', linestyle=':', label=f'Terminus: {ter}')
     plt.axvline(x=ori, color='r', linestyle=':', label=f'Origin: {ori}')
@@ -798,11 +820,20 @@ def plot_copy(df_cnv, pltstart, pltend, sample, output):
                 marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
     ax1.scatter(df_plt["win_st"],df_plt["prob_copy_number"], color="red", label="Predicted Copy Number", marker="_", s = 30)
 
-    delta = (df_plt['read_count_cov'].median()*0.5)
+    delta = int(df_plt['read_count_cov'].median()*0.5)
     
+    ax1.yaxis.set_major_locator(ticker.MultipleLocator(2))
+    ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
+    ax1.yaxis.set_minor_locator(ticker.MultipleLocator(1))
+
+    n_ticks = len(ax1.get_yticks())
+    ax2.yaxis.set_major_locator(ticker.LinearLocator(n_ticks))
+    ax2.yaxis.set_minor_locator(ticker.MultipleLocator(1))
+
     
-    ax2.set_ylim(df_plt['read_count_cov'].min() - delta, df_plt['read_count_cov'].max() + delta)
-    ax1.set_ylim(df_plt['otr_gc_corr_norm_cov'].min() - 0.5, df_plt['otr_gc_corr_norm_cov'].max() + 0.5)
+    ax2.set_ylim(int(df_plt['read_count_cov'].min() - delta), int(df_plt['read_count_cov'].max() + delta))
+    ax1.set_ylim(int(df_plt['otr_gc_corr_norm_cov'].min() - 1), int(df_plt['otr_gc_corr_norm_cov'].max() + 1))
+
     
     ax1.set_xlabel("Window (Genomic position)")
     ax1.yaxis.label.set_color('red')
