@@ -1,12 +1,13 @@
-# breseq-ext-cnv
-*breseq* copy number variation extension accepts .tab coverage output from [*breseq*](https://github.com/barricklab/breseq.git) BAM2COV and predicts copy number variations across the genome after correcting the biases in read counts introduced by variations in sequencing methods.
+# CNery
+*breseq* copy number variation extension predicts copy numbers using sequencing coverage output from [*breseq*](https://github.com/barricklab/breseq.git). The predictions account for biases in coverage due to sequencing methodologies such as GC content or prokaryotic physiological states during DNA isolation that may bias sequencing coverage towards origin of genome replication.
 
 **Installation:**
 
 Recommended: Create conda python environment.
+
 ```
-conda create -n <env-name> python>=3.9
-conda activate <env-name>
+mamba env create -f environment.yml
+mamba activate CNery
 ```
 Install breseq-ext-cnv
 ```
@@ -14,60 +15,60 @@ pip install git+https://github.com/barricklab/breseq-ext-cnv.git
 ```
 **Run:**
 
-Run BAM2COV on *breseq* output to get the coverage table: 
-```
-breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
-```
-With the coverage table as the input determine regions of copy number variation using: 
+Run CNery in the *breseq* folder that contains folders 01_.., 02_.., data and output: 
 
 ```
-breseq-ext-cnv -i <input file> [-o <output folder location>] [-w <window>] [-s <step size>]
+CNery [-o <output folder location>] [-w <window>] [-s <step size>] [-f <fragment length>]
+```
+
+If running this script from in a different location, specify input .bam file, refrence.fasta file and output paths:
+```
+CNery [-i <input .bam file>] [-ref <refrence.fasta file location>][-o <output folder location>] [-w <window>] [-s <step size>] [-f <fragment length>]
 ```
 
 **Run examples:**
-```
-breseq-ext-cnv -i <input file>
-```
+
+Calculate coverage with a window size of 500 and an sliding increment size of 250 to summarize coverage across the genome. Average fragment length of the sequencing platform is 300bp
 
 ```
-# calculate coverage with a window size of 500 and a increment of 250 with average sequencing fragment length of 300bp
-breseq-ext-cnv -i <input file> -w 500 -s 250 -f 300
+CNery -o <output folder> -w 500 -s 250 -f 300
 ```
-
+Analyze coverage across the whole genome but output copy number prediction and coverage plots of a specific genomic segment
 ```
-# output copy number prediction and coverage plots of a specific genomic segment
-breseq-ext-cnv -i <input file> --region 3497890-3955678 -w 1000 -s 500
+CNery -o <output folder> --region 3497890-3955678 -w 1000 -s 500
 ```
-
+Correct bias in sequencing coverage due to either one of the two factors GC or OTR (origin-terminus of replication) or no correction:
 ```
-#
+CNery -o <output folder> -w 500 -s 250 --bias otr #only correct for bias in coverage due to replication
+
+CNery -o <output folder> -w 500 -s 250 --bias gc #only correct for bias in coverage due to GC content of the sequence
+
+CNery -o <output folder> -w 500 -s 250 --bias none #no bias correction to be applied before CN prediction
 ```
-
-
+**CNery run options**
 ```
-$breseq-ext-cnv -h
+$CNery -h
 
-usage: get_CNV.py [-h] -i I [-o O] [-w W] [-s S] [-ori ORI] [-ter TER] [-f F] [-e E]
+usage: CNery [-h] [-i I] [-ref REF] [-reg REG] [-o O] [-w W] [-s S] [-ori ORI] [-ter TER] [-f F] [-e E]
+             [--bias {all,none,gc,otr}]
 
-The breseq-ext-cnv is python package extension to breseq that analyzes the sequencing coverage across the genome to determine specific regions that have undergone copy number variation (CNV)
+CNery is python package extension to breseq that analyzes the sequencing coverage across the genome to predict copy number variation (CNV)
 
 options:
-  -h , --help          show this help message and exit
-  -i , --input        input .tab file address from breseq bam2cov.
-  -o , --output       output file location preference. Defaults to the current folder.
-  -w , --window       Define window length to parse through the genome and calculate coverage and GC statistics.
-  -s , --step-size    Define step size (<= window size) for each progression of the window across the genome sequence. 
-                      Set = window size if non-overlapping windows.
-  --region            Set regions between which to display output coverage plots.
-  -ori , --origin     Genomic coordinate for origin of replication.
-  -ter , --terminus   Genomic coordinate for terminus of replication.
-  -f , --frag_size    Average fragment size of the sequencing reads.
-  -e , --error-rate   Error rate in sequencing read coverage, taken into account to accurately determine 0 copy coverage.
+  -h, --help            show this help message and exit
+  -i, --input I         input .bam file from breseq output
+  -ref REF              select the reference file used for breseq
+  -reg REG              select the region of the genome to evaluate
+  -o, --output O        output file prefix. Defaults to the CNV_out folder.
+  -w, --window W        Define window length to parse through the genome and calculate coverage and GC statistics.
+  -s, --step-size S     Define step size (<= window size) for each progression of the window across the genome sequence. Set step-size=window-size if non-overlapping windows.
+  -ori, --origin ORI    Genomic coordinate for origin of replication.
+  -ter, --terminus TER  Genomic coordinate for terminus of replication.
+  -f, --frag_size F     Average fragment size of the sequencing reads.
+  -e, --error-rate E    Approximate error rate in sequencing read coverage/refrence alignment.
+  --bias {all,none,gc,otr}
+                        Select specific bias correction (only OTR or only GC) to run before CN prediction.
 
-Input .tab file from breseq bam2cov. To get the coverage file run the command below in your breseq directory which contains the 'data' and 'output' folders.
-```
-
-```
-breseq bam2cov -t[--table] --resolution 0 (0=single base resolution) --region <reference:START-END> --output <filename>
+Run this script in the breseq output folder that contains 'data' and 'output' folders. 
 ```
 
