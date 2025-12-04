@@ -3,13 +3,11 @@
 
 import os
 import json
-import argparse
 import subprocess
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy import stats
-from pathlib import Path
 from scipy import ndimage
 import matplotlib as mplt
 from scipy.stats import geom
@@ -212,6 +210,25 @@ def gc_cor_plots(df, output):
     
     plt.close()
 
+#GC-bias correction
+def gc_correction(df):
+    # Corrects trends between GC% and coverage in windows using locally weighted regression model
+
+    cov = df["norm_raw_cov"]
+    gc = df["gc_percent"]
+    med = df["norm_raw_cov"].median()
+
+    loess = sm.nonparametric.lowess
+    gc_out = loess(cov, gc, frac=0.05, it=1, delta=0.0, is_sorted=False, missing='none', return_sorted=False)    
+
+    gc_corr = cov/gc_out
+
+    df["gc_corr_norm_cov"] = gc_corr
+    df["gc_corr_fact"] = gc_out
+    df["gc_cor_med_fil"] = ndimage.median_filter(df["gc_corr_norm_cov"], size = int(len(df)/10), mode = "reflect")
+    
+    return df
+
 def plot_otr_corr(df, output, ori, ter):
 
     samplename = output.strip().split('/')[-1]
@@ -239,104 +256,6 @@ def plot_otr_corr(df, output, ori, ter):
     df.reset_index(drop = True)
     
     plt.close()
-
-
-def plot_copy(df_cnv, pltstart, pltend, output):
-    
-    samplename = output.strip().split('/')[-1]
-    # samplename = sample.strip().split('.')[0]
-    saveplt = str(output+"/CNV_plt/")
-    
-    win_st = df_cnv["win_st"]
-    win_end = df_cnv["win_end"]
-
-    # Check if the region of the genome to plot is defined:
-
-    if pltstart == 0 and pltend == 0:
-        df_plt = df_cnv
-    elif pltstart == 0 and pltend > 0:
-        endidx = find_nearest(win_end, pltend)
-        df_plt = df_cnv.iloc[:endidx]
-    elif pltend == 0 and pltstart > 0:
-        stidx = find_nearest(win_st, pltstart)
-        df_plt = df_cnv.iloc[stidx:]
-    else:
-        stidx =find_nearest(win_st,pltstart)
-        endidx = find_nearest(win_end, pltend)
-        df_plt = df_cnv.iloc[stidx:endidx]
-
-    plt.figure(figsize=(10, 8))
-
-    fig, ax1 = plt.subplots()
-
-    # fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-
-    ax2 = ax1.twinx()
-    ax1.patch.set_visible(False)
-
-    ax1.set_zorder(2)  # Higher than ax2
-    ax2.set_zorder(1)  # Lower than ax1
-
-    
-    ax2.scatter(df_plt["win_st"],df_plt["read_count_cov"], color="gray", label="Raw reads",s=10, alpha = 0.2)
-    ax2.scatter(df_plt["win_st"],df_plt["otr_gc_corr_rdcnt_cov"], color="orange", label="Corrected reads",s=5, alpha = 0.5,
-                marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
-    ax1.scatter(df_plt["win_st"],df_plt["prob_copy_number"], color="red", label="Predicted Copy Number", marker="_", s = 30)
-
-    delta = int(df_plt['read_count_cov'].median()*0.5)
-    
-    ax1.yaxis.set_major_locator(ticker.MultipleLocator(2))
-    ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
-    ax1.yaxis.set_minor_locator(ticker.MultipleLocator(1))
-
-    n_ticks = len(ax1.get_yticks())
-    ax2.yaxis.set_major_locator(ticker.LinearLocator(n_ticks))
-    ax2.yaxis.set_minor_locator(ticker.MultipleLocator(1))
-
-    
-    ax2.set_ylim(int(df_plt['read_count_cov'].min() - delta), int(df_plt['read_count_cov'].max() + delta))
-    ax1.set_ylim(int(df_plt['otr_gc_corr_norm_cov'].min() - 1), int(df_plt['otr_gc_corr_norm_cov'].max() + 1))
-
-    
-    ax1.set_xlabel("Window (Genomic position)")
-    ax1.yaxis.label.set_color('red')
-    ax2.set_ylabel("Read Counts (/)")
-    ax1.set_ylabel("Copy Number (#)")
-    
-    plt.title(f'{samplename}_Copy Number Prediction')
-    
-    handles_ax1, labels_ax1 = ax1.get_legend_handles_labels()
-    handles_ax2, labels_ax2 = ax2.get_legend_handles_labels()
-
-    # Combine handles and labels
-    handles = handles_ax1 + handles_ax2
-    labels = labels_ax1 + labels_ax2
-
-    ax1.legend(handles, labels, loc='best')
-    
-    plt_full_path = os.path.join(saveplt,'%s_copy_numbers.pdf' % samplename)
-    plt.savefig(plt_full_path, format = 'pdf', bbox_inches = 'tight')
-    
-    plt.close()    
-    
-#GC-bias correction
-def gc_correction(df):
-    # Corrects trends between GC% and coverage in windows using locally weighted regression model
-
-    cov = df["norm_raw_cov"]
-    gc = df["gc_percent"]
-    med = df["norm_raw_cov"].median()
-
-    loess = sm.nonparametric.lowess
-    gc_out = loess(cov, gc, frac=0.05, it=1, delta=0.0, is_sorted=False, missing='none', return_sorted=False)    
-
-    gc_corr = cov/gc_out
-
-    df["gc_corr_norm_cov"] = gc_corr
-    df["gc_corr_fact"] = gc_out
-    df["gc_cor_med_fil"] = ndimage.median_filter(df["gc_corr_norm_cov"], size = int(len(df)/10), mode = "reflect")
-    
-    return df
 
 #Function to fit lines between ori-ter-coordinates to determine the best fit to actual coverage across genomic windows
 def fit_func(params, x, y):
@@ -662,12 +581,16 @@ def find_nearest(array, value):
     return idx
 
 #Correction of the normalized coverage based on the bias detected
-def otr_correction(filepath, ori, ter, enforce):
+def otr_correction(df, output, ori, ter, enforce):
 
-    df = gc_correction(filepath)
     windows = df["win_end"]
-    
-    corr = []
+    if "gc_cor_med_fil" not in df.columns:
+        df["gc_cor_med_fil"] = ndimage.median_filter(df["gc_corr_norm_cov"], 
+                                                     size = int(len(df)/10), 
+                                                     mode = "reflect")
+    samplename = output.strip().split('/')[-1]
+    saveplt = str(output+"/OTR_corr/")
+
     # enforces user set genomic co-ordinates of ori/ter to check and fit the bias curve.
     if (enforce == True):
         x1, x2 = find_nearest(windows,ter) , find_nearest(windows,ori)
@@ -686,7 +609,9 @@ def otr_correction(filepath, ori, ter, enforce):
         df["otr_gc_corr_norm_cov"] = h1
         df["otr_gc_corr_fact"] = f1
         
-        return df, results, ori, ter 
+        with open(saveplt+str(samplename)+'_otr_results.json', 'w') as f:
+            json.dump(results, f, indent = 4)
+        return df, ori, ter 
     
     else:
     # fits the bias curve to the most probable location of ori/ter based on coverage peak and troughs respectively
@@ -709,7 +634,88 @@ def otr_correction(filepath, ori, ter, enforce):
         df["otr_gc_corr_norm_cov"] = h1
         df["otr_gc_corr_fact"] = f1 
         
-        return df, results, xori, xter
+        with open(saveplt+str(samplename)+'_otr_results.json', 'w') as f:
+            json.dump(results, f, indent = 4)
+
+        return df, xori, xter
+
+def plot_copy(df_cnv, pltstart, pltend, output):
+    
+    samplename = output.strip().split('/')[-1]
+    # samplename = sample.strip().split('.')[0]
+    saveplt = str(output+"/CNV_plt/")
+    
+    win_st = df_cnv["win_st"]
+    win_end = df_cnv["win_end"]
+
+    # Check if the region of the genome to plot is defined:
+
+    if pltstart == 0 and pltend == 0:
+        df_plt = df_cnv
+    elif pltstart == 0 and pltend > 0:
+        endidx = find_nearest(win_end, pltend)
+        df_plt = df_cnv.iloc[:endidx]
+    elif pltend == 0 and pltstart > 0:
+        stidx = find_nearest(win_st, pltstart)
+        df_plt = df_cnv.iloc[stidx:]
+    else:
+        stidx =find_nearest(win_st,pltstart)
+        endidx = find_nearest(win_end, pltend)
+        df_plt = df_cnv.iloc[stidx:endidx]
+
+    plt.figure(figsize=(10, 8))
+
+    fig, ax1 = plt.subplots()
+
+    # fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+
+    ax2 = ax1.twinx()
+    ax1.patch.set_visible(False)
+
+    ax1.set_zorder(2)  # Higher than ax2
+    ax2.set_zorder(1)  # Lower than ax1
+
+    
+    ax2.scatter(df_plt["win_st"],df_plt["read_count_cov"], color="gray", label="Raw reads",s=10, alpha = 0.2)
+    ax2.scatter(df_plt["win_st"],df_plt["otr_gc_corr_rdcnt_cov"], color="orange", label="Corrected reads",s=5, alpha = 0.5,
+                marker = mplt.markers.MarkerStyle(marker = 'o', fillstyle = 'none'))
+    ax1.scatter(df_plt["win_st"],df_plt["prob_copy_number"], color="red", label="Predicted Copy Number", marker="_", s = 30)
+
+    delta = int(df_plt['read_count_cov'].median()*0.5)
+    
+    ax1.yaxis.set_major_locator(ticker.MultipleLocator(2))
+    ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
+    ax1.yaxis.set_minor_locator(ticker.MultipleLocator(1))
+
+    n_ticks = len(ax1.get_yticks())
+    ax2.yaxis.set_major_locator(ticker.LinearLocator(n_ticks))
+    ax2.yaxis.set_minor_locator(ticker.MultipleLocator(1))
+
+    
+    ax2.set_ylim(int(df_plt['read_count_cov'].min() - delta), int(df_plt['read_count_cov'].max() + delta))
+    ax1.set_ylim(int(df_plt['otr_gc_corr_norm_cov'].min() - 1), int(df_plt['otr_gc_corr_norm_cov'].max() + 1))
+
+    
+    ax1.set_xlabel("Window (Genomic position)")
+    ax1.yaxis.label.set_color('red')
+    ax2.set_ylabel("Read Counts (/)")
+    ax1.set_ylabel("Copy Number (#)")
+    
+    plt.title(f'{samplename}_Copy Number Prediction')
+    
+    handles_ax1, labels_ax1 = ax1.get_legend_handles_labels()
+    handles_ax2, labels_ax2 = ax2.get_legend_handles_labels()
+
+    # Combine handles and labels
+    handles = handles_ax1 + handles_ax2
+    labels = labels_ax1 + labels_ax2
+
+    ax1.legend(handles, labels, loc='best')
+    
+    plt_full_path = os.path.join(saveplt,'%s_copy_numbers.pdf' % samplename)
+    plt.savefig(plt_full_path, format = 'pdf', bbox_inches = 'tight')
+    
+    plt.close()    
 
 #Probability calculations for the Emission and Transition matrices
 def solve_pr(mean, variance):
@@ -823,16 +829,14 @@ def HMM_copy_number(obs, transition_matrix, emission_matrix, win_st, win_end, ch
     
     return results
 
-def run_HMM(input, reference, output, ori, ter, enforce, win, step, frag, error_rate=0.15, n_states=5, changeprob=(1e-10)):
+def run_HMM(df, output, error_rate=0.15, n_states=5, changeprob=(1e-10)):
     
     saveloc = str(output+"/CNV_csv/")
     samplename = output.strip().split('/')[-1]
     # samplename = sample.strip().split('.')[0]
     
-    df, ori_loc, ter_loc = bias_correction(input, reference, output, ori, ter, enforce, win, step, frag)
-    
     df["otr_gc_corr_norm_cov"] = np.nan_to_num(df["otr_gc_corr_norm_cov"])
-    cor_cov = df["otr_gc_corr_norm_cov"]
+    # cor_cov = df["otr_gc_corr_norm_cov"]
 
     med = df["read_count_cov"].median()
     cor_rc = []
@@ -901,226 +905,32 @@ def run_HMM(input, reference, output, ori, ter, enforce, win, step, frag, error_
 
     print(f"{samplename}: Copy number prediction complete. .csv files saved.")
     
-    return new_exp, samplename, ori_loc, ter_loc
+    return new_exp
 
+# def bias_correction(input, reference, output, ori, ter, enforce, win, step, frag):
+#     # Function handles the bias correction functions and outputs to be fed into the HMM
 
-def bias_correction(input, reference, output, ori, ter, enforce, win, step, frag):
-    # Function handles the bias correction functions and outputs to be fed into the HMM
-
-    samplename = output.strip().split('/')[-1]
-    # samplename = sample.strip().split('.')[0]
-    saveplt = str(output+"/OTR_corr/")
+#     samplename = output.strip().split('/')[-1]
+#     # samplename = sample.strip().split('.')[0]
+#     saveplt = str(output+"/OTR_corr/")
     
-    print("Calculating coverage pileup at each nucleotide base across the reference genome")
+#     print("Calculating coverage pileup at each nucleotide base across the reference genome")
     
-    df_tab = bam2cov_to_df(input, reference, samplename)
+#     df_tab = bam2cov_to_df(input, reference, samplename)
     
-    print('Calculating coverage and GC% across sliding window over the genome.')
+#     print('Calculating coverage and GC% across sliding window over the genome.')
     
-    df = preprocess(df_tab, win, step, frag)
-    gc_corr = gc_correction(df)
+#     df = preprocess(df_tab, win, step, frag)
+#     gc_corr = gc_correction(df)
     
-    print('Corrected GC bias in coverage.')
+#     print('Corrected GC bias in coverage.')
     
-    otr_corr, otr_res, ori_win, ter_win = otr_correction(gc_corr, ori, ter, enforce)
+#     otr_corr, otr_res, ori_win, ter_win = otr_correction(gc_corr, ori, ter, enforce)
 
-    with open(saveplt+str(samplename)+'_otr_results.json', 'w') as f:
-    # with open('Detected_otr-bias_results.json', 'w') as f:
-        json.dump(otr_res, f, indent = 4)
+#     with open(saveplt+str(samplename)+'_otr_results.json', 'w') as f:
+#     # with open('Detected_otr-bias_results.json', 'w') as f:
+#         json.dump(otr_res, f, indent = 4)
     
-    print('Corrected origin/terminus of replication(OTR) bias in coverage.')
+#     print('Corrected origin/terminus of replication(OTR) bias in coverage.')
     
-    return otr_corr, ori_win, ter_win
-
-def main():
-    from argparse import RawTextHelpFormatter
-    import textwrap
-
-    parser = argparse.ArgumentParser(description = "The breseq-ext-cnv is python package extension to breseq that analyzes the sequencing coverage across the genome to determine specific regions that have undergone copy number variation (CNV)",
-                                        epilog=textwrap.dedent('''\
-                                        Input is the coverage .tab file from breseq bam2cov. Run this script in the breseq output folder that contains 'data' and 'output'. 
-                                        '''), 
-                                        formatter_class = RawTextHelpFormatter)
-
-    # Define the command line arguments
-    parser.add_argument(
-        "-i",
-        "--input",
-        action="store",
-        dest="i",
-        required=False,
-        default="./data/reference.bam",
-        type=str,
-        help="input .bam file from breseq output",
-    )
-    
-    parser.add_argument(
-        "-ref"
-        "--fa-ref",
-        action="store",
-        dest="ref",
-        required=False,
-        default="./data/reference.fasta",
-        type=str,
-        help="select the reference file used for breseq",
-    )
-
-    parser.add_argument(
-        "-reg"
-        "--region",
-        action="store",
-        dest="reg",
-        required=False,
-        type=str,
-        help="select the region of the genome to evaluate",
-    )
-
-    parser.add_argument(
-        "-o",
-        "--output",
-        action="store",
-        dest="o",
-        required=False,
-        default='CNV_out',
-        type=str,
-        help="output file prefix. Defaults to the CNV_out folder.",
-    )
-
-    parser.add_argument(
-        "-w",
-        "--window",
-        action="store",
-        dest="w",
-        required=False,
-        default = 200,
-        type=int,
-        help="Define window length to parse through the genome and calculate coverage and GC statistics.",
-    )
-
-    parser.add_argument(
-        "-s",
-        "--step-size",
-        action="store",
-        dest="s",
-        required=False,
-        default = 100,
-        type=int,
-        help="Define step size (<= window size) for each progression of the window across the genome sequence. Set = window size if non-overlapping windows.",
-    )
-
-    parser.add_argument(
-        "-ori",
-        "--origin",
-        action="store",
-        dest="ori",
-        #default=3886082,
-        required=False,
-        type=int,
-        help="Genomic coordinate for origin of replication.",
-    )
-    parser.add_argument(
-        "-ter",
-        "--terminus",
-        action="store",
-        dest="ter",
-        #default=1567362,
-        required=False,
-        type=int,
-        help="Genomic coordinate for terminus of replication.",
-    )
-    parser.add_argument(
-        "-f",
-        "--frag_size",
-        action="store",
-        dest="f",
-        default=500,
-        required=False,
-        type=int,
-        help="Average fragment size of the sequencing reads.",
-    )
-    parser.add_argument(
-        "-e",
-        "--error-rate",
-        action="store",
-        dest="e",
-        default=0.05,
-        required=False,
-        type=float,
-        help="Error rate in sequencing read coverage, taken into account to accurately determine 0 copy coverage.",
-    )
-    
-    # Parse the command line arguments
-    options = parser.parse_args()
-    
-    # out_dir = options.o
-
-    out_dir="./output/"+options.o
-
-    
-    out_subdirs = ['/CNV_plt' , '/CNV_csv', '/GC_bias', '/OTR_corr']
-    for i in range(len(out_subdirs)):
-        Path(out_dir+out_subdirs[i]).mkdir(parents=True, exist_ok=True)
-
-    region = options.reg
-
-    if region is not None:
-        parts = region.split('-')
-        if len(parts) == 2 :
-            if parts[0] == '':
-                pltend = int(parts[1])
-                pltstart = 0
-            elif parts[1] == '':
-                pltstart = int(parts[0])
-                pltend = 0
-            else:
-                pltstart, pltend = int(parts[0]), int(parts[1])
-        else:
-            return "Invalid region. Ensure the region is specified by int values of 2 genomic coordinates separated by a '-'."
-    else:
-        pltstart, pltend = 0, 0
-
-    # Call the copy number (HMM) function with the provided options
-    if options.ori and options.ter is not None:
-        print("Ori has been set (value is %s)" % options.ori)
-        print("Ter has been set (value is %s)" % options.ter)
-        cnv, smpl, ori_win, ter_win = run_HMM(
-            input=options.i,
-            reference=options.ref,
-            output = out_dir,
-            ori=options.ori,
-            ter=options.ter,
-            enforce=True,
-            win=options.w,
-            step=options.s,
-            frag=options.f,
-            error_rate=options.e
-        )
-    else:
-        options.ori=None,
-        options.ter=None,
-        print("Ori has not been set (default value is %s)" % options.ori)
-        print("Ter has not been set (default value is %s)" % options.ter)
-        cnv, smpl, ori_win, ter_win = run_HMM(
-            input=options.i,
-            reference=options.ref,
-            output = out_dir,
-            ori=options.ori,
-            ter=options.ter,
-            enforce=False,
-            win=options.w,
-            step=options.s,
-            frag=options.f,
-            error_rate=options.e
-        )
-    
-    #Call the plotting functions to visualize bias correction and copy number predictions
-    gc_cor_plots(cnv, output=out_dir)
-    print(f'{smpl}: GC bias vs coverage plots saved.')
-    plot_otr_corr(cnv, output=out_dir, ori=ori_win, ter=ter_win)
-    print(f'{smpl}: OTR bias vs coverage plots saved.')
-    plot_copy(cnv, pltstart, pltend, output=out_dir)
-    print(f'{smpl}: CNV prediction plots saved.')
-
-
-if __name__ == "__main__":
-    main()
+#     return otr_corr, ori_win, ter_win
