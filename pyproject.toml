@@ -24,8 +24,9 @@ classifiers = [
 
 dynamic = ["dependencies"]
 
-# [tool.setuptools.dynamic]
-# dependencies = {file = ["environment.yml"]}
-
 [project.scripts]
 CNery = "CNery.get_CNV:main"
+
+[project.urls]
+Homepage = "https://github.com/barricklab/breseq-ext-cnv"
+Issues = "https://github.com/barricklab/breseq-ext-cnv/issues"
