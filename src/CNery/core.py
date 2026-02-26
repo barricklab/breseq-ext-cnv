@@ -25,7 +25,7 @@ def bam2cov_to_df(
     extra_args=None   # optional, list for any extra CLI args
 ):
     # The tab output file name (may be output_prefix or output_prefix.tab)
-    tab_file = "./output/"+output_prefix
+    tab_file = output_prefix
     header = None
     seq_len = 0
     with open(fastafile) as fh:

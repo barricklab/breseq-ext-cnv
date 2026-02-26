@@ -31,9 +31,11 @@ def main():
         action="store",
         dest="i",
         required=False,
-        default="./data/reference.bam",
+        #default="./data/reference.bam",
         type=str,
-        help="input .bam file from breseq output",
+        help="input folder path"
+        "(the breseq output folder with 'data' and 'output' folders)." \
+        "Defaults to current folder"
     )
     
     parser.add_argument(
@@ -41,9 +43,10 @@ def main():
         action="store",
         dest="ref",
         required=False,
-        default="./data/reference.fasta",
+        #default="./data/reference.fasta",
         type=str,
-        help="select the reference file used for breseq",
+        help="select the reference file used for breseq. " \
+        "Defaults to data/refrence.fasta"
     )
 
     parser.add_argument(
@@ -61,9 +64,10 @@ def main():
         action="store",
         dest="o",
         required=False,
-        default='CNV_out',
+        # default='CNV_out',
         type=str,
-        help="output file prefix. Defaults to the CNV_out folder.",
+        help="output file prefix / storage location. " \
+        "Defaults to the 'CNV_out' folder in current dir.",
     )
 
     parser.add_argument(
@@ -137,8 +141,18 @@ def main():
         )
     # Parse the command line arguments
     options = parser.parse_args()
+    if options.i is not None:
+        in_dir = options.i 
+    else:
+        in_dir = "."
+    
+    bam_in = in_dir+"/data/reference.bam"
+    ref_in = in_dir+"/data/reference.fasta"
 
-    out_dir="./output/"+options.o
+    if options.o is not None:
+        out_dir = options.o
+    else:
+        out_dir= in_dir + "/CNV_out/"
     
     out_subdirs = ['/CNV_plt' , '/CNV_csv', '/GC_bias', '/OTR_corr']
     for i in range(len(out_subdirs)):
@@ -181,7 +195,7 @@ def main():
         # enforce=False
 
     print("Calculating coverage pileup at each nucleotide base across the reference genome")
-    df_tab = bam2cov_to_df(options.i, options.ref, options.o)
+    df_tab = bam2cov_to_df(bam_in, ref_in, out_dir)
     print('Calculating coverage and GC% across sliding window over the genome.')
     df_b2c = preprocess(df_tab, options.w, options.s, options.f)
 
